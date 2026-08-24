@@ -1,0 +1,7 @@
+provider: openai-compatible
+base_url: "https://example.invalid/v1"
+model: "model-name"
+api_key_env: "AI_WORKFLOW_REQUIREMENTS_API_KEY"
+timeout_seconds: 60
+max_retries: 2
+structured_output: true

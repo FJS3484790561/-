@@ -1,0 +1,39 @@
+{
+  "status": "PASS",
+  "checked_at": "2026-08-24T17:14:26+00:00",
+  "project": "D:\\gpt项目\\室内设计（新）",
+  "checks": {
+    "python": {
+      "status": "PASS",
+      "message": "Python 3.12.3 is available"
+    },
+    "requirements_provider": {
+      "status": "PASS",
+      "mode": "codex_only",
+      "external_provider_required": false,
+      "message": "external requirements provider is disabled by default; using Codex-only reconciliation and making no provider request",
+      "config_path": "D:\\gpt项目\\室内设计（新）\\docs\\integrations\\requirements-model.yaml",
+      "configuration_help": [],
+      "api_key_present": "not_checked",
+      "provider_config_present": false,
+      "provider_reachable": "not_checked",
+      "requirements_synthesis_completed": false
+    },
+    "superpowers_brainstorming": {
+      "status": "PASS",
+      "message": "Superpowers Brainstorming skill and plugin manifest are available",
+      "skill_path": "C:\\Users\\A\\.codex\\.tmp\\plugins\\plugins\\superpowers\\skills\\brainstorming\\SKILL.md",
+      "plugin_manifest": "C:\\Users\\A\\.codex\\.tmp\\plugins\\plugins\\superpowers\\.codex-plugin\\plugin.json"
+    },
+    "comet_native_cli": {
+      "status": "PASS",
+      "message": "Comet Native CLI is available",
+      "command": "E:\\node.js\\node_global\\comet.CMD"
+    },
+    "comet_native_skill": {
+      "status": "PASS",
+      "message": "Comet Native skill is available",
+      "skill_path": "C:\\Users\\A\\.agents\\skills\\comet-native\\SKILL.md"
+    }
+  }
+}

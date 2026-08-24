@@ -1,0 +1,79 @@
+{
+  "workflow_version": "4.0",
+  "state_revision": 1,
+  "project": {
+    "name": "AI室内设计师",
+    "status": "active"
+  },
+  "current": {
+    "phase_id": "init",
+    "task_id": "",
+    "task_status": "pending"
+  },
+  "active_change_id": null,
+  "preflight": {
+    "status": "PASS",
+    "checked_at": "2026-08-24T17:14:26+00:00",
+    "record_path": "D:\\gpt项目\\室内设计（新）\\docs\\comet\\PREFLIGHT.json",
+    "checks": {
+      "python": {
+        "status": "PASS",
+        "message": "Python 3.12.3 is available"
+      },
+      "requirements_provider": {
+        "status": "PASS",
+        "mode": "codex_only",
+        "external_provider_required": false,
+        "message": "external requirements provider is disabled by default; using Codex-only reconciliation and making no provider request",
+        "config_path": "D:\\gpt项目\\室内设计（新）\\docs\\integrations\\requirements-model.yaml",
+        "configuration_help": [],
+        "api_key_present": "not_checked",
+        "provider_config_present": false,
+        "provider_reachable": "not_checked",
+        "requirements_synthesis_completed": false
+      },
+      "superpowers_brainstorming": {
+        "status": "PASS",
+        "message": "Superpowers Brainstorming skill and plugin manifest are available",
+        "skill_path": "C:\\Users\\A\\.codex\\.tmp\\plugins\\plugins\\superpowers\\skills\\brainstorming\\SKILL.md",
+        "plugin_manifest": "C:\\Users\\A\\.codex\\.tmp\\plugins\\plugins\\superpowers\\.codex-plugin\\plugin.json"
+      },
+      "comet_native_cli": {
+        "status": "PASS",
+        "message": "Comet Native CLI is available",
+        "command": "E:\\node.js\\node_global\\comet.CMD"
+      },
+      "comet_native_skill": {
+        "status": "PASS",
+        "message": "Comet Native skill is available",
+        "skill_path": "C:\\Users\\A\\.agents\\skills\\comet-native\\SKILL.md"
+      }
+    }
+  },
+  "approvals": {
+    "project_discovery": false,
+    "baseline": false,
+    "surface_map": false,
+    "project_spec": false,
+    "architecture": false,
+    "roadmap": false,
+    "ui_style": null,
+    "ui_lock": null,
+    "comet_handoff": false,
+    "release": false
+  },
+  "approval_receipts": {},
+  "surfaces": [],
+  "baseline": {
+    "kind": "undecided",
+    "revision": null,
+    "audit_path": null
+  },
+  "verification": {
+    "last_result": "na",
+    "evidence": [],
+    "checked_at": null
+  },
+  "updated_at": "2026-08-24T18:39:15+00:00",
+  "updated_by": "init-project"
+}
