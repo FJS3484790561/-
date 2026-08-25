@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "lint": "eslint .",
-    "typecheck": "node -e \"console.log('TYPECHECK: N/A - prototype uses JavaScript; runtime build is the current syntax check')\""
+    "typecheck": "node -e \"console.log('TYPECHECK: N/A - prototype uses JavaScript; runtime build is the current syntax check')\"",
+    "test": "node --test"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
