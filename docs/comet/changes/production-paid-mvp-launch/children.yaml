@@ -1,0 +1,134 @@
+schema: comet.native.children.v1
+children:
+  - name: production-persistence-foundation
+    depends_on: []
+    covers:
+      - A1
+      - A20
+      - A33
+      - A34
+  - name: verified-email-access-controls
+    depends_on:
+      - production-persistence-foundation
+    covers:
+      - A2
+      - A7
+      - A10
+      - A13
+      - A14
+      - A15
+      - A16
+      - A17
+      - A41
+  - name: credit-code-management
+    depends_on:
+      - verified-email-access-controls
+    covers:
+      - A10
+      - A11
+      - A12
+      - A17
+      - A20
+      - A24
+      - A25
+      - A26
+      - A27
+      - A28
+      - A41
+  - name: production-generation-provider
+    depends_on:
+      - production-persistence-foundation
+    covers:
+      - A3
+      - A5
+      - A7
+      - A19
+      - A21
+      - A22
+      - A23
+      - A42
+      - A45
+  - name: wechat-payment-integration
+    depends_on:
+      - production-persistence-foundation
+    covers:
+      - A4
+      - A7
+      - A29
+      - A30
+      - A31
+      - A32
+      - A42
+  - name: tencent-cloud-operations
+    depends_on:
+      - verified-email-access-controls
+      - credit-code-management
+      - production-generation-provider
+      - wechat-payment-integration
+    covers:
+      - A1
+      - A5
+      - A6
+      - A7
+      - A9
+      - A18
+      - A33
+      - A34
+      - A35
+      - A36
+      - A37
+      - A38
+      - A39
+      - A40
+      - A42
+      - A43
+      - A44
+  - name: production-release-qa
+    depends_on:
+      - tencent-cloud-operations
+    covers:
+      - A1
+      - A2
+      - A3
+      - A4
+      - A5
+      - A6
+      - A7
+      - A8
+      - A9
+      - A10
+      - A11
+      - A12
+      - A13
+      - A14
+      - A15
+      - A16
+      - A17
+      - A18
+      - A19
+      - A20
+      - A21
+      - A22
+      - A23
+      - A24
+      - A25
+      - A26
+      - A27
+      - A28
+      - A29
+      - A30
+      - A31
+      - A32
+      - A33
+      - A34
+      - A35
+      - A36
+      - A37
+      - A38
+      - A39
+      - A40
+      - A41
+      - A42
+      - A43
+      - A44
+      - A45

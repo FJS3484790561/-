@@ -1,0 +1,280 @@
+schema: comet.native.v4
+name: production-paid-mvp-launch
+language: zh-CN
+phase: build
+status: active
+state_version: 2
+brief: brief.md
+children_contract_hash: 0d4a7e294e24c065ee500a11827d673bc2a1c63e2aa671b7bbe3f2bd02efdbf8
+spec_changes:
+  - capability: production-paid-mvp
+    operation: create
+    source: specs/production-paid-mvp/spec.md
+workspace:
+  isolation: branch
+  change_branch: comet/production-paid-mvp-launch
+  target_branch: master
+  finish: null
+loop:
+  stage: building
+  goal_cycle: 1
+  iteration: 1
+  attempt: 0
+  retry_epoch: 0
+  failed_iteration_count: 0
+  no_progress_count: 0
+  execution_failure_count: 0
+  previous_unresolved_ids: []
+  next_action: submit-builder-candidate
+acceptance:
+  - id: A1
+    source: brief.md
+    text: "A1: 生产数据在服务重启后仍保留，账户、作品、订单和额度记录可恢复，额度与支付到账保持一致。"
+    result: pending
+    reason: null
+  - id: A2
+    source: brief.md
+    text: "A2: 用户完成邮箱验证后才激活账户、获得首次 3
+      点并可兑换额度码；用户可登录、退出并通过真实邮件完成一次性找回密码，相关响应不泄露账户是否存在。"
+    result: pending
+    reason: null
+  - id: A3
+    source: brief.md
+    text: "A3: 登录用户可上传合规图片并调用真实 Provider 生成结果；失败不扣额度，成功只扣 1 点且作品可跨设备查看。"
+    result: pending
+    reason: null
+  - id: A4
+    source: brief.md
+    text: "A4: 用户可购买 1-9 元整数金额对应的同额点数，或购买 10 元/12 点、30 元/45 点、100 元/200
+      点额度包；支付回调经过验签并具备幂等性，同一订单不会重复加额度。"
+    result: pending
+    reason: null
+  - id: A5
+    source: brief.md
+    text: "A5: 管理员可安全配置 Provider，任何用户响应、日志、前端产物和数据库明文字段均不泄露生产密钥。"
+    result: pending
+    reason: null
+  - id: A6
+    source: brief.md
+    text: "A6: 生产环境通过域名和 HTTPS 访问，具备健康检查、结构化日志、关键告警、备份与可执行回滚步骤。"
+    result: pending
+    reason: null
+  - id: A7
+    source: brief.md
+    text: "A7: 未登录、普通用户、管理员权限边界以及上传、CSRF/SSRF、速率限制和安全响应头通过验证。"
+    result: pending
+    reason: null
+  - id: A8
+    source: brief.md
+    text: "A8: 桌面和 320-390px 移动端核心流程通过浏览器验证，自动化测试、lint、构建和依赖安全检查通过。"
+    result: pending
+    reason: null
+  - id: A9
+    source: brief.md
+    text: "A9: 只有在生产验收证据齐备且用户明确批准发布后，才允许执行正式上线。"
+    result: pending
+    reason: null
+  - id: A10
+    source: brief.md
+    text: "A10: 管理员可随时关闭或重新开放注册；关闭后新用户无法注册且页面明确提示暂停注册，已有账户仍可登录。免费内测新账户验证邮箱后获得 3
+      点且仅发放一次，额度到账和到期时间可被审计。"
+    result: pending
+    reason: null
+  - id: A11
+    source: brief.md
+    text: "A11: 管理员可生成带每人 1-200
+      点、最大兑换人数和兑换截止时间的共享额度码；同一账户对同一码最多成功兑换一次，达到人数上限、超过兑换期限或使用无效码均不会增加额度，兑换记录可审计\
+      。"
+    result: pending
+    reason: null
+  - id: A12
+    source: brief.md
+    text: "A12: 额度码默认须在生成后 30 天内兑换，管理员可调整兑换截止时间；兑换所得额度自到账起 12 个月有效。"
+    result: pending
+    reason: null
+  - id: A13
+    source: specs/production-paid-mvp/spec.md
+    text: 用户使用邮箱和密码注册、登录和退出，并可通过一次性邮件链接找回密码。
+    result: pending
+    reason: null
+  - id: A14
+    source: specs/production-paid-mvp/spec.md
+    text: 找回密码的响应不得泄露邮箱是否已经注册。
+    result: pending
+    reason: null
+  - id: A15
+    source: specs/production-paid-mvp/spec.md
+    text: 免费内测默认允许公开注册，管理员可随时关闭或重新开放注册。关闭时新用户无法注册且页面明确提示暂停注册，已有账户仍可登录。
+    result: pending
+    reason: null
+  - id: A16
+    source: specs/production-paid-mvp/spec.md
+    text: 新用户须先完成邮箱验证，账户才激活、获得一次 3 点额度并具备额度码兑换资格；每个账户的注册赠送只能发放一次，额度记录由服务端保存并可审计。
+    result: pending
+    reason: null
+  - id: A17
+    source: specs/production-paid-mvp/spec.md
+    text: 免费内测期间，用户可通过管理员生成的额度码获得额外额度。
+    result: pending
+    reason: null
+  - id: A18
+    source: specs/production-paid-mvp/spec.md
+    text: 切换到正式收费版时，不继承内测账户、作品或额度；内测业务数据按受控流程清理，正式用户需要重新注册。
+    result: pending
+    reason: null
+  - id: A19
+    source: specs/production-paid-mvp/spec.md
+    text: 1 点额度对应一次成功生成。Provider 超时、拒绝或失败不扣额度，系统不自动重试，用户可手动再次生成。
+    result: pending
+    reason: null
+  - id: A20
+    source: specs/production-paid-mvp/spec.md
+    text: 免费额度、额度码兑换所得额度和购买额度自到账起 12 个月有效；服务端是余额、扣减和到期状态的权威来源。
+    result: pending
+    reason: null
+  - id: A21
+    source: specs/production-paid-mvp/spec.md
+    text: 登录用户可上传合规的 JPEG 或 PNG 图片，选择现有的房间、风格、改造强度和偏好后，通过服务端调用真实第三方生图 Provider。
+    result: pending
+    reason: null
+  - id: A22
+    source: specs/production-paid-mvp/spec.md
+    text: 每次请求返回一个结果。作品包含原图、结果图和生成信息，可跨设备查看、下载，并使用支持指针及键盘操作的前后对比滑块查看。
+    result: pending
+    reason: null
+  - id: A23
+    source: specs/production-paid-mvp/spec.md
+    text: Provider 由管理员在后台选择和配置，系统保留更换 Provider 的能力；浏览器、用户响应、日志、前端产物和数据库明文字段不得泄露
+      Provider 密钥。
+    result: pending
+    reason: null
+  - id: A24
+    source: specs/production-paid-mvp/spec.md
+    text: 管理员可生成共享额度码，并为每个码填写每位成功兑换者获得的 1-200 点额度、最大成功兑换人数和兑换截止时间。
+    result: pending
+    reason: null
+  - id: A25
+    source: specs/production-paid-mvp/spec.md
+    text: 兑换截止时间默认为额度码生成后 30 天，管理员可在生成时调整。
+    result: pending
+    reason: null
+  - id: A26
+    source: specs/production-paid-mvp/spec.md
+    text: 同一账户对同一个额度码最多成功兑换一次。达到最大兑换人数、超过截止时间、无效或重复兑换均不得增加额度。
+    result: pending
+    reason: null
+  - id: A27
+    source: specs/production-paid-mvp/spec.md
+    text: 成功和失败的兑换尝试需要保留必要的审计信息；并发兑换不得突破最大兑换人数或重复加额度。
+    result: pending
+    reason: null
+  - id: A28
+    source: specs/production-paid-mvp/spec.md
+    text: 兑换所得额度自成功到账起 12 个月有效。
+    result: pending
+    reason: null
+  - id: A29
+    source: specs/production-paid-mvp/spec.md
+    text: 首期只接入微信支付，支付宝、订阅制、优惠券和退款自动化留作后续 Change。
+    result: pending
+    reason: null
+  - id: A30
+    source: specs/production-paid-mvp/spec.md
+    text: 用户可选择 1-9 元的整数充值金额，按 1 元兑换 1 点；也可购买 10 元/12 点、30 元/45 点或 100 元/200 点额度包。
+    result: pending
+    reason: null
+  - id: A31
+    source: specs/production-paid-mvp/spec.md
+    text: 支付订单、回调验签、金额核对、状态流转和额度到账由服务端完成。回调必须幂等，同一订单不得重复增加额度。
+    result: pending
+    reason: null
+  - id: A32
+    source: specs/production-paid-mvp/spec.md
+    text: 营业执照、域名备案和微信支付商户号完成前，不开放充值或真实扣款，只允许免费内测和支付测试环境验证。
+    result: pending
+    reason: null
+  - id: A33
+    source: specs/production-paid-mvp/spec.md
+    text: 账户、会话、作品、订单、额度、兑换码和审计记录使用生产数据库持久化，服务重启后不得丢失。
+    result: pending
+    reason: null
+  - id: A34
+    source: specs/production-paid-mvp/spec.md
+    text: 图片使用对象存储，数据库和必要对象具备异地备份、恢复验证和可执行回滚步骤。
+    result: pending
+    reason: null
+  - id: A35
+    source: specs/production-paid-mvp/spec.md
+    text: 中国大陆生产环境使用腾讯云的单区精简部署，通过已备案域名和 HTTPS 提供服务；月基础设施预算控制在 300 元以内，不含生图 API 用量。
+    result: pending
+    reason: null
+  - id: A36
+    source: specs/production-paid-mvp/spec.md
+    text: 服务具备健康检查、结构化脱敏日志、关键告警、速率限制、安全响应头，以及上传、CSRF、SSRF、权限和内容安全保护。
+    result: pending
+    reason: null
+  - id: A37
+    source: specs/production-paid-mvp/spec.md
+    text: 生产凭据仅来自部署环境变量或密钥管理服务，不进入 Git、文档、日志、截图或前端代码。
+    result: pending
+    reason: null
+  - id: A38
+    source: specs/production-paid-mvp/spec.md
+    text: 自动化测试、代码检查、构建、依赖安全检查、支付测试环境、备份恢复以及桌面和 320-390px 移动端核心流程均需形成独立验收证据。
+    result: pending
+    reason: null
+  - id: A39
+    source: specs/production-paid-mvp/spec.md
+    text: 远程推送、域名购买、备案提交、生产部署、生产凭据配置、真实扣款和正式发布均不由本规格自动授权。
+    result: pending
+    reason: null
+  - id: A40
+    source: specs/production-paid-mvp/spec.md
+    text: 只有生产验收证据齐备且用户另行明确批准发布后，才允许正式收费上线。
+    result: pending
+    reason: null
+  - id: A41
+    source: specs/production-paid-mvp/spec.md
+    text: "DECISION: 免费内测使用邮箱验证、首次 3 点、管理员注册开关和共享额度码；正式收费版不继承内测数据。"
+    result: pending
+    reason: null
+  - id: A42
+    source: specs/production-paid-mvp/spec.md
+    text: "DECISION: 首期使用微信支付、腾讯云国内单区部署和按次付费的可更换第三方生图 Provider。"
+    result: pending
+    reason: null
+  - id: A43
+    source: specs/production-paid-mvp/spec.md
+    text: "DECISION: 真实部署、真实扣款和正式发布必须在证照与验收完成后另行批准。"
+    result: pending
+    reason: null
+  - id: A44
+    source: specs/production-paid-mvp/spec.md
+    text: "FACT: 当前代码已经具备本地用户端、管理员端、HTTP API 和
+      Provider/支付适配边界，但仍缺生产数据库、真实邮件、真实支付、真实生图服务和生产部署。"
+    result: pending
+    reason: null
+  - id: A45
+    source: specs/production-paid-mvp/spec.md
+    text: "IMPLEMENTATION_CHOICE: 在不固定供应商品牌的前提下沿用现有服务边界，通过可配置适配器接入首个满足合规、成本和接口要求的
+      Provider，避免把供应商凭据或专有调用暴露给浏览器。"
+    result: pending
+    reason: null
+builder_handoff: null
+blockers: []
+verification: null
+history: []
+history_overflow:
+  dropped_entries: 0
+  first_dropped_at: null
+  last_dropped_at: null
+  outcome_counts:
+    pass: 0
+    fail: 0
+    blocked: 0
+    execution-error: 0
+    recovery: 0
+verification_result: pending
+verification_report: null
+archived: false
+created_at: 2026-08-25T17:21:07.270Z
