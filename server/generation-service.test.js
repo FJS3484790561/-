@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { AuthService, MemoryAuthStore } from './auth-service.js'
 import { GenerationService, MemoryGenerationStore, ProviderRegistry } from './generation-service.js'
+import { CreditLedgerService, MemoryCreditStore } from './credit-ledger.js'
 
 const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3])
 const params = { room: '客厅', theme: '现代简约', scale: '均衡', preferences: { layout: true } }
@@ -51,4 +52,41 @@ test('maps provider errors and timeouts without exposing provider details', asyn
   const timedOut = await fixture({ provider: { generate: async () => new Promise(() => {}) }, providerTimeoutMs: 1 })
   const timeoutTask = await timedOut.service.createGeneration({ sessionToken: timedOut.token, image: { type: 'image/jpeg', data: jpeg }, params })
   assert.deepEqual((await timedOut.service.waitForGeneration(timeoutTask.task.id)).error, { code: 'GENERATION_TIMEOUT', message: '生成时间较长，请稍后重试。' })
+})
+
+test('reserves one credit before generation and releases it when generation fails', async () => {
+  const fixtureData = await fixture({ provider: { generate: async () => { throw new Error('upstream failed') } } })
+  const ledger = new CreditLedgerService({ authService: fixtureData.authService, store: new MemoryCreditStore() })
+  ledger.initializeUser({ sessionToken: fixtureData.token })
+  const service = new GenerationService({ authService: fixtureData.authService, store: new MemoryGenerationStore(), providers: new ProviderRegistry({ default: { generate: async () => { throw new Error('upstream failed') } } }), creditLedger: ledger })
+  const task = await service.createGeneration({ sessionToken: fixtureData.token, image: { type: 'image/jpeg', data: jpeg }, params })
+  assert.equal(task.ok, true)
+  assert.equal((await service.waitForGeneration(task.task.id)).status, 'failed')
+  assert.equal(ledger.getBalance({ sessionToken: fixtureData.token }).available, 3)
+})
+
+test('settles one credit after a successful generation', async () => {
+  const fixtureData = await fixture()
+  const ledger = new CreditLedgerService({ authService: fixtureData.authService, store: new MemoryCreditStore() })
+  let calls = 0
+  const service = new GenerationService({ authService: fixtureData.authService, store: new MemoryGenerationStore(), providers: new ProviderRegistry({ default: { generate: async () => { calls += 1; return { effectImage: { url: '/generated/result.jpg' } } } } }), creditLedger: ledger })
+  const task = await service.createGeneration({ sessionToken: fixtureData.token, image: { type: 'image/jpeg', data: jpeg }, params })
+  const result = await service.waitForGeneration(task.task.id)
+  assert.equal(result.status, 'succeeded')
+  assert.equal(calls, 1)
+  assert.equal(ledger.getBalance({ sessionToken: fixtureData.token }).available, 2)
+})
+
+test('does not call the provider when all credits are exhausted', async () => {
+  const fixtureData = await fixture()
+  const ledger = new CreditLedgerService({ authService: fixtureData.authService, store: new MemoryCreditStore() })
+  const userId = fixtureData.authService.getSession(fixtureData.token).id
+  for (let index = 0; index < 3; index += 1) {
+    const reservation = ledger.reserveForUser({ userId, operationId: `used-${index}` })
+    ledger.settleForUser({ userId, reservationId: reservation.reservation.id })
+  }
+  let calls = 0
+  const service = new GenerationService({ authService: fixtureData.authService, store: new MemoryGenerationStore(), providers: new ProviderRegistry({ default: { generate: async () => { calls += 1; return { effectImage: { url: '/should-not-run' } } } } }), creditLedger: ledger })
+  assert.deepEqual(await service.createGeneration({ sessionToken: fixtureData.token, image: { type: 'image/jpeg', data: jpeg }, params }), { ok: false, code: 'INSUFFICIENT_CREDITS' })
+  assert.equal(calls, 0)
 })
