@@ -19,7 +19,33 @@ export class MemoryCreditStore {
     this.lots = new Map()
     this.reservations = new Map()
     this.operations = new Map()
+    this.journal = new MemoryCreditJournal()
     this.initializedUsers = new Set()
+  }
+
+  transaction(work) {
+    return work()
+  }
+}
+
+class MemoryCreditJournal {
+  constructor() {
+    this.entries = new Map()
+  }
+
+  get(idempotencyKey) {
+    const entry = this.entries.get(idempotencyKey)
+    return entry ? structuredClone(entry) : undefined
+  }
+
+  append(entry) {
+    if (this.entries.has(entry.idempotencyKey)) throw new Error('duplicate credit operation')
+    this.entries.set(entry.idempotencyKey, structuredClone(entry))
+    return entry
+  }
+
+  values() {
+    return [...this.entries.values()].map((entry) => structuredClone(entry)).values()
   }
 }
 
@@ -38,22 +64,33 @@ export class CreditLedgerService {
   }
 
   initializeUserForId({ userId }) {
-    if (this.store.initializedUsers.has(userId)) return { ok: true, created: false }
-    this.store.initializedUsers.add(userId)
-    this.#grantForUser({ userId, amount: INITIAL_FREE_CREDITS, source: 'free_signup' })
-    return { ok: true, created: true }
+    return this.store.transaction(() => {
+      if (this.store.initializedUsers.has(userId)) return { ok: true, created: false }
+      this.store.initializedUsers.add(userId)
+      this.#grantForUser({ userId, amount: INITIAL_FREE_CREDITS, source: 'free_signup', idempotencyKey: `signup:${userId}` })
+      return { ok: true, created: true }
+    })
   }
 
-  grant({ sessionToken, amount, source = 'grant', expiresAt }) {
+  grant({ sessionToken, amount, source = 'grant', expiresAt, idempotencyKey }) {
     const user = this.#user(sessionToken)
     if (!user) return { ok: false, code: 'UNAUTHORIZED' }
-    return this.grantForUser({ userId: user.id, amount, source, expiresAt })
+    return this.grantForUser({ userId: user.id, amount, source, expiresAt, idempotencyKey })
   }
 
-  grantForUser({ userId, amount, source = 'grant', createdAt = this.clock(), expiresAt }) {
+  grantForUser({ userId, amount, source = 'grant', createdAt = this.clock(), expiresAt, idempotencyKey = `grant:${randomUUID()}` }) {
     if (!positiveInteger(amount)) return { ok: false, code: 'INVALID_CREDIT_AMOUNT' }
-    const lot = this.#grantForUser({ userId, amount, source, createdAt, expiresAt })
-    return { ok: true, lot: this.#publicLot(lot) }
+    return this.store.transaction(() => {
+      const existing = this.store.journal.get(idempotencyKey)
+      if (existing) {
+        if (existing.type !== 'grant' || existing.userId !== userId || existing.amount !== amount || existing.source !== source) return { ok: false, code: 'IDEMPOTENCY_CONFLICT' }
+        const lot = this.#lotsForUser(userId).find((candidate) => candidate.id === existing.lotId)
+        if (!lot) throw new Error('credit lot not found')
+        return { ok: true, lot: this.#publicLot(lot), duplicate: true }
+      }
+      const lot = this.#grantForUser({ userId, amount, source, createdAt, expiresAt, idempotencyKey })
+      return { ok: true, lot: this.#publicLot(lot) }
+    })
   }
 
   getBalance({ sessionToken }) {
@@ -78,33 +115,35 @@ export class CreditLedgerService {
 
   reserveForUser({ userId, operationId, amount = 1 }) {
     if (!operationId || !positiveInteger(amount)) return { ok: false, code: 'INVALID_RESERVATION' }
-    this.initializeUserForId({ userId })
-    const operationKey = `${userId}:${operationId}`
-    const existing = this.store.operations.get(operationKey)
-    if (existing) return { ok: true, reservation: this.#publicReservation(existing) }
-    const now = this.clock()
-    const allocations = []
-    let remaining = amount
-    for (const lot of this.#lotsForUser(userId).sort((left, right) => left.expiresAt - right.expiresAt || left.createdAt - right.createdAt || left.id.localeCompare(right.id))) {
-      const available = this.#available(lot, now)
-      if (available <= 0) continue
-      const quantity = Math.min(available, remaining)
-      lot.reserved += quantity
-      allocations.push({ lotId: lot.id, quantity })
-      remaining -= quantity
-      if (remaining === 0) break
-    }
-    if (remaining > 0) {
-      for (const allocation of allocations) {
-        const lot = this.#findLot(allocation.lotId)
-        lot.reserved -= allocation.quantity
+    return this.store.transaction(() => {
+      this.initializeUserForId({ userId })
+      const operationKey = `${userId}:${operationId}`
+      const existing = this.store.operations.get(operationKey)
+      if (existing) return { ok: true, reservation: this.#publicReservation(existing) }
+      const now = this.clock()
+      const lots = this.#lotsForUser(userId)
+      const allocations = []
+      let remaining = amount
+      for (const lot of lots.sort((left, right) => left.expiresAt - right.expiresAt || left.createdAt - right.createdAt || left.id.localeCompare(right.id))) {
+        const available = this.#available(lot, now)
+        if (available <= 0) continue
+        const quantity = Math.min(available, remaining)
+        lot.reserved += quantity
+        allocations.push({ lotId: lot.id, quantity })
+        remaining -= quantity
+        if (remaining === 0) break
       }
-      return { ok: false, code: 'INSUFFICIENT_CREDITS' }
-    }
-    const reservation = { id: `reservation_${randomUUID()}`, userId, operationId, amount, allocations, status: 'reserved', createdAt: now }
-    this.store.reservations.set(reservation.id, reservation)
-    this.store.operations.set(operationKey, reservation)
-    return { ok: true, reservation: this.#publicReservation(reservation) }
+      if (remaining > 0) {
+        for (const allocation of allocations) lots.find((lot) => lot.id === allocation.lotId).reserved -= allocation.quantity
+        return { ok: false, code: 'INSUFFICIENT_CREDITS' }
+      }
+      this.store.lots.set(userId, lots)
+      const reservation = { id: `reservation_${randomUUID()}`, userId, operationId, amount, allocations, status: 'reserved', createdAt: now }
+      this.store.reservations.set(reservation.id, reservation)
+      this.store.operations.set(operationKey, reservation)
+      this.#appendOperation({ idempotencyKey: `reserve:${operationKey}`, userId, type: 'reserve', amount, reservationId: reservation.id, allocations, occurredAt: now })
+      return { ok: true, reservation: this.#publicReservation(reservation) }
+    })
   }
 
   settle({ sessionToken, reservationId }) {
@@ -114,18 +153,26 @@ export class CreditLedgerService {
   }
 
   settleForUser({ userId, reservationId }) {
-    const reservation = this.store.reservations.get(reservationId)
-    if (!reservation || reservation.userId !== userId) return { ok: false, code: 'RESERVATION_NOT_FOUND' }
-    if (reservation.status === 'settled') return { ok: true, reservation: this.#publicReservation(reservation) }
-    if (reservation.status === 'released') return { ok: false, code: 'RESERVATION_RELEASED' }
-    for (const allocation of reservation.allocations) {
-      const lot = this.#findLot(allocation.lotId)
-      lot.reserved -= allocation.quantity
-      lot.consumed += allocation.quantity
-    }
-    reservation.status = 'settled'
-    reservation.settledAt = this.clock()
-    return { ok: true, reservation: this.#publicReservation(reservation) }
+    return this.store.transaction(() => {
+      const reservation = this.store.reservations.get(reservationId)
+      if (!reservation || reservation.userId !== userId) return { ok: false, code: 'RESERVATION_NOT_FOUND' }
+      if (reservation.status === 'settled') return { ok: true, reservation: this.#publicReservation(reservation) }
+      if (reservation.status === 'released') return { ok: false, code: 'RESERVATION_RELEASED' }
+      const lots = this.#lotsForUser(userId)
+      for (const allocation of reservation.allocations) {
+        const lot = lots.find((candidate) => candidate.id === allocation.lotId)
+        if (!lot) throw new Error('credit lot not found')
+        lot.reserved -= allocation.quantity
+        lot.consumed += allocation.quantity
+      }
+      reservation.status = 'settled'
+      reservation.settledAt = this.clock()
+      this.store.lots.set(userId, lots)
+      this.store.reservations.set(reservationId, reservation)
+      this.store.operations.set(`${userId}:${reservation.operationId}`, reservation)
+      this.#appendOperation({ idempotencyKey: `settle:${reservation.id}`, userId, type: 'settle', amount: reservation.amount, reservationId: reservation.id, allocations: reservation.allocations, occurredAt: reservation.settledAt })
+      return { ok: true, reservation: this.#publicReservation(reservation) }
+    })
   }
 
   release({ sessionToken, reservationId }) {
@@ -135,38 +182,46 @@ export class CreditLedgerService {
   }
 
   releaseForUser({ userId, reservationId }) {
-    const reservation = this.store.reservations.get(reservationId)
-    if (!reservation || reservation.userId !== userId) return { ok: false, code: 'RESERVATION_NOT_FOUND' }
-    if (reservation.status === 'released') return { ok: true, reservation: this.#publicReservation(reservation) }
-    if (reservation.status === 'settled') return { ok: false, code: 'RESERVATION_SETTLED' }
-    for (const allocation of reservation.allocations) this.#findLot(allocation.lotId).reserved -= allocation.quantity
-    reservation.status = 'released'
-    reservation.releasedAt = this.clock()
-    return { ok: true, reservation: this.#publicReservation(reservation) }
+    return this.store.transaction(() => {
+      const reservation = this.store.reservations.get(reservationId)
+      if (!reservation || reservation.userId !== userId) return { ok: false, code: 'RESERVATION_NOT_FOUND' }
+      if (reservation.status === 'released') return { ok: true, reservation: this.#publicReservation(reservation) }
+      if (reservation.status === 'settled') return { ok: false, code: 'RESERVATION_SETTLED' }
+      const lots = this.#lotsForUser(userId)
+      for (const allocation of reservation.allocations) {
+        const lot = lots.find((candidate) => candidate.id === allocation.lotId)
+        if (!lot) throw new Error('credit lot not found')
+        lot.reserved -= allocation.quantity
+      }
+      reservation.status = 'released'
+      reservation.releasedAt = this.clock()
+      this.store.lots.set(userId, lots)
+      this.store.reservations.set(reservationId, reservation)
+      this.store.operations.set(`${userId}:${reservation.operationId}`, reservation)
+      this.#appendOperation({ idempotencyKey: `release:${reservation.id}`, userId, type: 'release', amount: reservation.amount, reservationId: reservation.id, allocations: reservation.allocations, occurredAt: reservation.releasedAt })
+      return { ok: true, reservation: this.#publicReservation(reservation) }
+    })
   }
 
   #user(sessionToken) {
     return this.authService.getSession(sessionToken)
   }
 
-  #grantForUser({ userId, amount, source, createdAt = this.clock(), expiresAt = addMonths(createdAt, CREDIT_EXPIRY_MONTHS) }) {
+  #grantForUser({ userId, amount, source, createdAt = this.clock(), expiresAt = addMonths(createdAt, CREDIT_EXPIRY_MONTHS), idempotencyKey }) {
     const lot = { id: `credit_lot_${randomUUID()}`, userId, amount, consumed: 0, reserved: 0, source, createdAt, expiresAt }
     const userLots = this.store.lots.get(userId) ?? []
     userLots.push(lot)
     this.store.lots.set(userId, userLots)
+    this.#appendOperation({ idempotencyKey, userId, type: 'grant', amount, lotId: lot.id, source, expiresAt: lot.expiresAt, occurredAt: createdAt })
     return lot
+  }
+
+  #appendOperation(entry) {
+    this.store.journal.append({ id: `credit_operation_${randomUUID()}`, ...entry, allocations: entry.allocations?.map((allocation) => ({ ...allocation })) })
   }
 
   #lotsForUser(userId) {
     return this.store.lots.get(userId) ?? []
-  }
-
-  #findLot(lotId) {
-    for (const lots of this.store.lots.values()) {
-      const lot = lots.find((candidate) => candidate.id === lotId)
-      if (lot) return lot
-    }
-    throw new Error('credit lot not found')
   }
 
   #available(lot, now) {

@@ -54,3 +54,14 @@ test('concurrent reservations cannot over-allocate the initial balance', async (
   assert.equal(reservations.filter((result) => result.ok).length, 3)
   assert.equal(reservations.filter((result) => result.code === 'INSUFFICIENT_CREDITS').length, 1)
 })
+
+test('uses an immutable idempotency key for grants', async () => {
+  const fixtureData = await fixture()
+  const first = fixtureData.ledger.grantForUser({ userId: fixtureData.userId, amount: 12, source: 'payment:one', idempotencyKey: 'payment:one' })
+  const duplicate = fixtureData.ledger.grantForUser({ userId: fixtureData.userId, amount: 12, source: 'payment:one', idempotencyKey: 'payment:one' })
+  assert.equal(first.ok, true)
+  assert.equal(duplicate.duplicate, true)
+  assert.equal(duplicate.lot.id, first.lot.id)
+  assert.deepEqual(fixtureData.ledger.grantForUser({ userId: fixtureData.userId, amount: 45, source: 'payment:other', idempotencyKey: 'payment:one' }), { ok: false, code: 'IDEMPOTENCY_CONFLICT' })
+  assert.equal([...fixtureData.ledger.store.journal.values()].filter((entry) => entry.idempotencyKey === 'payment:one').length, 1)
+})

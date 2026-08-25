@@ -41,9 +41,46 @@ function safeFailure(reason) {
   return { code: 'PROVIDER_UNAVAILABLE', message: '暂时无法生成设计，请稍后重试。' }
 }
 
+function storedImageBytes(image) {
+  const direct = imageBytes(image)
+  if (direct) return { bytes: direct, mimeType: image.type ?? image.mimeType }
+  const match = String(image?.url ?? '').match(/^data:([^;,]+);base64,([A-Za-z0-9+/]+={0,2})$/u)
+  return match ? { bytes: Buffer.from(match[2], 'base64'), mimeType: image.mimeType ?? match[1] } : null
+}
+
+function imageExtension(mimeType) {
+  return mimeType === 'image/png' ? 'png' : 'jpg'
+}
+
+async function responseBytes(response, maxBytes) {
+  if (!response.body?.getReader) {
+    const bytes = Buffer.from(await response.arrayBuffer())
+    if (bytes.length > maxBytes) throw new Error('Provider image is too large')
+    return bytes
+  }
+  const reader = response.body.getReader()
+  const chunks = []
+  let size = 0
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    size += value.byteLength
+    if (size > maxBytes) {
+      await reader.cancel()
+      throw new Error('Provider image is too large')
+    }
+    chunks.push(Buffer.from(value))
+  }
+  return Buffer.concat(chunks, size)
+}
+
 export class MemoryGenerationStore {
   constructor() {
     this.tasks = new Map()
+  }
+
+  transaction(work) {
+    return work()
   }
 }
 
@@ -62,7 +99,7 @@ export class ProviderRegistry {
 }
 
 export class GenerationService {
-  constructor({ authService, store = new MemoryGenerationStore(), providers = new ProviderRegistry(), providerName = 'default', clock = () => Date.now(), maxImageBytes = DEFAULT_MAX_IMAGE_BYTES, providerTimeoutMs = 30_000, creditLedger = null } = {}) {
+  constructor({ authService, store = new MemoryGenerationStore(), providers = new ProviderRegistry(), providerName = 'default', clock = () => Date.now(), maxImageBytes = DEFAULT_MAX_IMAGE_BYTES, providerTimeoutMs = 30_000, creditLedger = null, objectStorage = null, fetchImpl = globalThis.fetch } = {}) {
     if (!authService) throw new Error('authService is required')
     this.authService = authService
     this.store = store
@@ -72,6 +109,8 @@ export class GenerationService {
     this.maxImageBytes = maxImageBytes
     this.providerTimeoutMs = providerTimeoutMs
     this.creditLedger = creditLedger
+    this.objectStorage = objectStorage
+    this.fetchImpl = fetchImpl
   }
 
   createGeneration({ sessionToken, image, params }) {
@@ -80,11 +119,21 @@ export class GenerationService {
     const validation = validateRequest({ image, params }, this.maxImageBytes)
     if (validation) return Promise.resolve(validation)
     const id = `generation_${randomUUID()}`
-    const reservation = this.creditLedger?.reserveForUser({ userId: user.id, operationId: id, amount: 1 })
-    if (reservation && !reservation.ok) return Promise.resolve(reservation)
     const task = { id, userId: user.id, status: 'queued', createdAt: this.clock(), updatedAt: this.clock(), input: { name: image.name ?? 'upload', type: image.type, size: imageBytes(image).length }, params: { ...params, preferences: { ...(params.preferences ?? {}) } } }
-    if (reservation) task.reservationId = reservation.reservation.id
-    this.store.tasks.set(id, task)
+    let reservation
+    try {
+      const prepared = this.store.transaction(() => {
+        reservation = this.creditLedger?.reserveForUser({ userId: user.id, operationId: id, amount: 1 })
+        if (reservation && !reservation.ok) return reservation
+        if (reservation) task.reservationId = reservation.reservation.id
+        this.store.tasks.set(id, task)
+        return { ok: true }
+      })
+      if (!prepared.ok) return Promise.resolve(prepared)
+    } catch {
+      if (reservation?.ok) this.creditLedger?.releaseForUser({ userId: user.id, reservationId: reservation.reservation.id })
+      return Promise.resolve(error('GENERATION_PERSISTENCE_FAILED'))
+    }
     queueMicrotask(() => this.#run(task, image))
     return Promise.resolve({ ok: true, task: this.#publicTask(task) })
   }
@@ -98,30 +147,52 @@ export class GenerationService {
   }
 
   async waitForGeneration(taskId) {
-    const task = this.store.tasks.get(taskId)
-    if (!task) return null
-    while (task.status === 'queued' || task.status === 'running') await new Promise((resolve) => setTimeout(resolve, 0))
-    return this.#publicTask(task)
+    while (true) {
+      const task = this.store.tasks.get(taskId)
+      if (!task) return null
+      if (task.status !== 'queued' && task.status !== 'running') return this.#publicTask(task)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
   }
 
   async #run(task, image) {
     task.status = 'running'
     task.updatedAt = this.clock()
+    this.store.tasks.set(task.id, task)
     const provider = this.providers.get(this.providerName)
     if (!provider) return this.#fail(task, { code: 'PROVIDER_UNAVAILABLE' })
     let timeoutId
     try {
+      if (this.objectStorage) {
+        const original = storedImageBytes(image)
+        const stored = await this.#storeImage(task, 'original', original)
+        task.input = { ...task.input, objectKey: stored.key, url: this.#objectUrl(stored.key) }
+        this.store.tasks.set(task.id, task)
+      }
       const output = await Promise.race([
         provider.generate({ image, params: task.params }),
         new Promise((_, reject) => { timeoutId = setTimeout(() => reject({ code: 'PROVIDER_TIMEOUT' }), this.providerTimeoutMs) }),
       ])
       clearTimeout(timeoutId)
       if (!output?.effectImage?.url) return this.#fail(task, { code: 'INVALID_PROVIDER_RESPONSE' })
-      task.status = 'succeeded'
-      const settlement = this.creditLedger?.settleForUser({ userId: task.userId, reservationId: task.reservationId })
-      if (settlement && !settlement.ok) return this.#fail(task, { code: 'CREDIT_SETTLEMENT_FAILED' })
-      task.result = { original: { ...task.input }, effectImage: { url: String(output.effectImage.url), mimeType: output.effectImage.mimeType ?? 'image/jpeg' } }
-      task.updatedAt = this.clock()
+      let effectImage = { url: String(output.effectImage.url), mimeType: output.effectImage.mimeType ?? 'image/jpeg' }
+      if (this.objectStorage) {
+        const result = await this.#providerImageBytes(output.effectImage)
+        const stored = await this.#storeImage(task, 'result', result)
+        effectImage = { url: this.#objectUrl(stored.key), objectKey: stored.key, mimeType: stored.mimeType }
+      }
+      this.store.transaction(() => {
+        const settlement = this.creditLedger?.settleForUser({ userId: task.userId, reservationId: task.reservationId })
+        if (settlement && !settlement.ok) {
+          const settlementError = new Error('Credit settlement failed')
+          settlementError.code = 'CREDIT_SETTLEMENT_FAILED'
+          throw settlementError
+        }
+        task.status = 'succeeded'
+        task.result = { original: { ...task.input }, effectImage }
+        task.updatedAt = this.clock()
+        this.store.tasks.set(task.id, task)
+      })
     } catch (reason) {
       clearTimeout(timeoutId)
       this.#fail(task, safeFailure(reason))
@@ -129,14 +200,47 @@ export class GenerationService {
   }
 
   #fail(task, reason) {
-    if (this.creditLedger && task.reservationId) this.creditLedger.releaseForUser({ userId: task.userId, reservationId: task.reservationId })
-    task.status = 'failed'
-    task.error = { code: reason.code, message: reason.message ?? '暂时无法生成设计，请稍后重试。' }
-    task.updatedAt = this.clock()
+    this.store.transaction(() => {
+      if (this.creditLedger && task.reservationId) this.creditLedger.releaseForUser({ userId: task.userId, reservationId: task.reservationId })
+      task.status = 'failed'
+      task.error = { code: reason.code, message: reason.message ?? '暂时无法生成设计，请稍后重试。' }
+      task.updatedAt = this.clock()
+      this.store.tasks.set(task.id, task)
+    })
   }
 
   #publicTask(task) {
     return { id: task.id, status: task.status, createdAt: task.createdAt, updatedAt: task.updatedAt, input: task.input, ...(task.status === 'succeeded' ? { result: task.result } : {}), ...(task.status === 'failed' ? { error: task.error } : {}) }
+  }
+
+  async #storeImage(task, kind, image) {
+    if (!image?.bytes || !image.mimeType) throw new Error('Image bytes are required for object storage')
+    const key = `users/${task.userId}/generations/${task.id}/${kind}.${imageExtension(image.mimeType)}`
+    return this.objectStorage.put({ key, body: image.bytes, mimeType: image.mimeType, ownerId: task.userId, metadata: { kind, generationId: task.id } })
+  }
+
+  async #providerImageBytes(image) {
+    const direct = storedImageBytes(image)
+    if (direct) return direct
+    let url
+    try {
+      url = new URL(String(image?.url))
+    } catch {
+      throw new Error('Provider image URL is invalid')
+    }
+    if (url.protocol !== 'https:' || url.username || url.password || typeof this.fetchImpl !== 'function') throw new Error('Provider image bytes are unavailable')
+    const response = await this.fetchImpl(url, { signal: AbortSignal.timeout(this.providerTimeoutMs) })
+    if (!response.ok) throw new Error('Provider image download failed')
+    const contentLength = Number(response.headers.get('content-length') ?? 0)
+    if (contentLength > this.maxImageBytes) throw new Error('Provider image is too large')
+    const bytes = await responseBytes(response, this.maxImageBytes)
+    const mimeType = image.mimeType ?? response.headers.get('content-type')?.split(';')[0]
+    if (!ALLOWED_IMAGE_TYPES.has(mimeType) || bytes.length === 0 || bytes.length > this.maxImageBytes || !matchesImageSignature(mimeType, bytes)) throw new Error('Provider image content is invalid')
+    return { bytes, mimeType }
+  }
+
+  #objectUrl(key) {
+    return `/api/objects/${encodeURIComponent(key)}`
   }
 }
 

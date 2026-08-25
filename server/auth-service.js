@@ -36,6 +36,10 @@ export class MemoryAuthStore {
     this.sessions = new Map()
     this.resetTokens = new Map()
   }
+
+  transaction(work) {
+    return work()
+  }
 }
 
 export class AuthService {
@@ -104,9 +108,11 @@ export class AuthService {
     const tokenKey = digest(token)
     const reset = this.store.resetTokens.get(tokenKey)
     if (!reset || reset.expiresAt <= this.clock()) return { ok: false, code: 'INVALID_OR_EXPIRED_RESET' }
-    const user = [...this.store.users.values()].find((candidate) => candidate.id === reset.userId)
+    const userEntry = [...this.store.users.entries()].find(([, candidate]) => candidate.id === reset.userId)
+    const user = userEntry?.[1]
     if (!user) return { ok: false, code: 'INVALID_OR_EXPIRED_RESET' }
     user.passwordHash = await hashPassword(password)
+    this.store.users.set(userEntry[0], user)
     this.store.resetTokens.delete(tokenKey)
     for (const [sessionKey, session] of this.store.sessions) if (session.userId === user.id) this.store.sessions.delete(sessionKey)
     return { ok: true }

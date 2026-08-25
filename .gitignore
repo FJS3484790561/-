@@ -5,6 +5,11 @@ dist/
 .env.*
 !.env.example
 npm-debug.log*
+data/
+backups/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
 # >>> Comet managed project state >>>
 !/.comet/
 /.comet/*

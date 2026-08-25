@@ -45,6 +45,10 @@ export class MemoryAdminProviderStore {
     this.configs = new Map()
     this.audit = []
   }
+
+  transaction(work) {
+    return work()
+  }
 }
 
 export class AdminProviderService {
@@ -83,8 +87,10 @@ export class AdminProviderService {
     if ([...this.store.configs.values()].some((config) => config.name === name)) return { ok: false, code: 'PROVIDER_ALREADY_EXISTS' }
     const now = this.clock()
     const config = { id: `provider_${randomUUID()}`, name, endpoint, model, encryptedApiKey: encryptSecret(apiKey, this.encryptionKey), enabled: false, createdAt: now, updatedAt: now }
-    this.store.configs.set(config.id, config)
-    this.#record(access.user.id, config, 'created')
+    this.store.transaction(() => {
+      this.store.configs.set(config.id, config)
+      this.#record(access.user.id, config, 'created')
+    })
     return { ok: true, provider: publicConfig(config) }
   }
 
@@ -100,13 +106,12 @@ export class AdminProviderService {
     if (fields) return { ok: false, code: 'VALIDATION_ERROR', fields }
     if (!this.canManage(access.user.id, nextName)) return { ok: false, code: 'FORBIDDEN' }
     if ([...this.store.configs.values()].some((candidate) => candidate.id !== providerId && candidate.name === nextName)) return { ok: false, code: 'PROVIDER_ALREADY_EXISTS' }
-    config.name = nextName
-    config.endpoint = nextEndpoint
-    config.model = nextModel
-    if (apiKey !== undefined) config.encryptedApiKey = encryptSecret(apiKey, this.encryptionKey)
-    config.updatedAt = this.clock()
-    this.#record(access.user.id, config, 'updated')
-    return { ok: true, provider: publicConfig(config) }
+    const updated = { ...config, name: nextName, endpoint: nextEndpoint, model: nextModel, encryptedApiKey: apiKey === undefined ? config.encryptedApiKey : encryptSecret(apiKey, this.encryptionKey), updatedAt: this.clock() }
+    this.store.transaction(() => {
+      this.store.configs.set(providerId, updated)
+      this.#record(access.user.id, updated, 'updated')
+    })
+    return { ok: true, provider: publicConfig(updated) }
   }
 
   setEnabled({ sessionToken, providerId, enabled }) {
@@ -115,10 +120,12 @@ export class AdminProviderService {
     const config = this.store.configs.get(providerId)
     if (!config || !this.canManage(access.user.id, config.name)) return { ok: false, code: 'NOT_FOUND' }
     if (typeof enabled !== 'boolean') return { ok: false, code: 'VALIDATION_ERROR', fields: { enabled: 'enabled must be boolean' } }
-    config.enabled = enabled
-    config.updatedAt = this.clock()
-    this.#record(access.user.id, config, enabled ? 'enabled' : 'disabled')
-    return { ok: true, provider: publicConfig(config) }
+    const updated = { ...config, enabled, updatedAt: this.clock() }
+    this.store.transaction(() => {
+      this.store.configs.set(providerId, updated)
+      this.#record(access.user.id, updated, enabled ? 'enabled' : 'disabled')
+    })
+    return { ok: true, provider: publicConfig(updated) }
   }
 
   listAudit({ sessionToken, providerId }) {
