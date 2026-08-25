@@ -6,18 +6,19 @@ ASSESSMENT_DATE: 2026-08-25
 
 ## Executive conclusion
 
-当前代码具备经过测试的本地服务边界和一个可运行的设计工作台，但还不是可部署、可收费的完整 Web 应用。认证、作品、充值和管理员 Surface 尚未与浏览器 UI 及 HTTP API 集成，生产数据、支付、邮件、Provider、密钥和部署基础设施也未配置。
+当前代码已具备并通过本地集成验证的用户端、管理员端和 HTTP API 边界，但还不是可直接部署收费的生产 Web 应用。生产数据库、真实支付、邮件、图像 Provider、密钥管理和部署基础设施仍未配置。
 
 ## Verified readiness
 
 | Area | Result | Evidence |
 |---|---|---|
-| Workbench core flow | PASS | Playwright 完成上传、缺图校验、模拟生成和前后对比。 |
-| Responsive layout | PASS | 1440x1000、390x844、320x800 无页面横向溢出。 |
-| Comparison control | PASS | 指针输入由 range 控件支持；键盘方向键可改变分界位置，焦点可见。 |
-| Comparison labels | PASS | 三个验证视口中“生成之前/生成之后”均不重叠。 |
-| Browser console | PASS | 三个验证视口均无 console error。 |
-| Service tests | PASS | `npm test` 共 27 项通过。 |
+| User browser flow | PASS | Playwright 在三个视口完成找回密码入口、注册、工作台、上传、模拟生成、前后对比、保存作品、作品详情、额度订单、账户帮助和退出登录。 |
+| Admin browser flow | PASS | 普通用户访问被拒绝；管理员可创建、编辑、启用和审计 Provider，密钥不回填、不显示。 |
+| Responsive layout | PASS | 用户端 1440x1000、管理员端 1366x900，以及两端 390x844、320x800 均无页面横向溢出。 |
+| Comparison control | PASS | range 控件支持指针；键盘方向键可改变分界位置，三个视口中“生成之前/生成之后”均不重叠。 |
+| Accessibility basics | PASS | 关键表单和按钮可按语义名称定位，滑杆可键盘操作，管理员关键焦点轮廓可见。 |
+| Browser console | PASS | 用户端与管理员端三个验证视口均无意外 console error。 |
+| Service and client tests | PASS | `npm test` 共 37 项通过，覆盖 HTTP、认证、额度、生成、支付、作品、管理员和前端 API 客户端。 |
 | Static checks | PASS | `npm run lint`、`npm run build`、`npm run typecheck` 通过。 |
 | Production dependency audit | PASS | npm 官方审计端点报告 0 个生产依赖漏洞。 |
 | Secret pattern scan | PASS | 未发现私钥、常见生产 API key 模式或被 Git 跟踪的 `.env` 文件。 |
@@ -27,8 +28,6 @@ ASSESSMENT_DATE: 2026-08-25
 
 | Blocker | Required production work |
 |---|---|
-| Browser Surface 不完整 | 实现并验证认证/找回密码、作品库、额度充值、账户帮助和管理员配置页面。 |
-| 前后端未集成 | 提供 HTTPS HTTP API 路由，将浏览器 Surface 接入认证、生成、作品、额度、订单和管理员服务。 |
 | 数据仅在内存中 | 选择生产数据库，设计 schema、迁移、事务、备份和恢复；验证额度与支付到账原子性。 |
 | 支付仍为 adapter/模拟 | 选择合规支付平台，完成商户审核、真实订单、验签回调、对账、退款/争议和沙箱验证。 |
 | Provider 未接入 | 配置真实图像 Provider、超时/重试、内容安全、成本限制和故障切换。 |
@@ -42,6 +41,7 @@ ASSESSMENT_DATE: 2026-08-25
 
 - 当前 Vite 页面仍使用模拟生成结果，不能证明真实 Provider 可用。
 - 当前 Typecheck 脚本只声明 JavaScript 项目语法边界，不是完整静态类型证明。
+- 当前 Node.js 22.12.0 比部分开发工具声明的 22.13.0 最低版本低一小版；本轮 lint、build 和测试实际通过，上线构建环境仍应固定到受支持版本。
 - npm 镜像 `registry.npmmirror.com` 不支持 audit 接口；本次改用 npm 官方端点并成功完成审计。
 - 本报告不包含真实支付、真实邮件、真实 Provider、数据库或生产部署测试。
 
@@ -49,8 +49,8 @@ ASSESSMENT_DATE: 2026-08-25
 
 | ID | Classification | Statement | Evidence / approval | Status |
 |---|---|---|---|---|
-| F-001 | FACT | 三个视口的工作台 Playwright 检查通过。 | `tests/cross-surface.playwright.mjs` 本地执行结果。 | CONFIRMED |
-| F-002 | FACT | 27 项服务测试和构建检查通过。 | 本 Change 的命令检查输出。 | CONFIRMED |
-| F-003 | FACT | 当前缺少完整前端 Surface、HTTP 集成和生产基础设施。 | 仓库检查与已归档 Change 的 known limits。 | CONFIRMED |
+| F-001 | FACT | 用户端和管理员端在桌面、390px、320px 的组合 Playwright 检查通过。 | `npm run qa:browser` 本地执行结果。 | CONFIRMED |
+| F-002 | FACT | 37 项测试、lint、build 和 JavaScript 语法/模块检查通过。 | 本 Change 的命令检查输出。 | CONFIRMED |
+| F-003 | FACT | 浏览器 Surface 与 HTTP API 已集成；生产基础设施和第三方服务仍缺失。 | 仓库检查、浏览器 QA 与生产边界检查。 | CONFIRMED |
 | D-001 | DECISION | 本 Change 不部署、不配置域名、不接入真实支付、不写生产凭据。 | 用户确认的 Shape 范围。 | CONFIRMED |
 | I-001 | IMPLEMENTATION_CHOICE | 使用 Playwright 覆盖 1440、390、320 三个视口。 | 覆盖桌面与 UI Lock 指定移动宽度，后续可扩展。 | CONFIRMED |

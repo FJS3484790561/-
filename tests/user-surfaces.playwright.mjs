@@ -60,6 +60,15 @@ try {
     });
     await page.goto(baseUrl, { waitUntil: "networkidle" });
 
+    await page.getByRole("button", { name: "忘记密码？" }).click();
+    await page
+      .getByLabel("邮箱")
+      .fill(`recovery-${viewport.name}-${Date.now()}@example.com`);
+    await page.getByRole("button", { name: "发送重置说明" }).click();
+    await page
+      .getByText("如该邮箱已注册，重置说明将发送到邮箱。")
+      .waitFor();
+    await page.getByRole("button", { name: "返回登录" }).click();
     await page.getByRole("tab", { name: "注册" }).click();
     await page
       .getByLabel("邮箱")
@@ -79,6 +88,16 @@ try {
     await slider.focus();
     await slider.press("ArrowRight");
     const sliderValue = Number(await slider.inputValue());
+    const labels = await Promise.all([
+      page.getByText("生成之前", { exact: true }).boundingBox(),
+      page.getByText("生成之后", { exact: true }).boundingBox(),
+    ]);
+    const labelsOverlap =
+      labels.every(Boolean) &&
+      labels[0].x < labels[1].x + labels[1].width &&
+      labels[0].x + labels[0].width > labels[1].x &&
+      labels[0].y < labels[1].y + labels[1].height &&
+      labels[0].y + labels[0].height > labels[1].y;
     await page.getByRole("button", { name: "保存作品" }).click();
     await page.getByText("作品已保存到“我的作品”。").waitFor();
 
@@ -111,6 +130,7 @@ try {
       viewport: viewport.name,
       noHorizontalOverflow: metrics.scrollWidth <= metrics.clientWidth,
       keyboardSliderMoved: sliderValue > 50,
+      comparisonLabelsDoNotOverlap: !labelsOverlap,
       expectedUnauthorizedResponses: expectedUnauthorizedResponses.length,
       unexpectedConsoleErrors,
     };
@@ -118,6 +138,7 @@ try {
     if (
       !result.noHorizontalOverflow ||
       !result.keyboardSliderMoved ||
+      !result.comparisonLabelsDoNotOverlap ||
       unexpectedConsoleErrors.length
     )
       process.exitCode = 1;
