@@ -1,0 +1,250 @@
+schema: comet.native.v4
+name: works-credit-ledger
+language: zh-CN
+phase: archive
+status: done
+state_version: 11
+brief: brief.md
+spec_changes: []
+workspace:
+  isolation: branch
+  change_branch: comet/works-credit-ledger
+  target_branch: master
+  finish: merge
+loop:
+  stage: done
+  goal_cycle: 1
+  iteration: 2
+  attempt: 1
+  retry_epoch: 0
+  failed_iteration_count: 1
+  no_progress_count: 0
+  execution_failure_count: 0
+  previous_unresolved_ids: []
+  next_action: null
+acceptance:
+  - id: A1
+    source: brief.md
+    text: 新用户可查询到 3 点免费额度，额度批次拥有创建时间和 12 个月到期时间。
+    result: passed
+    reason:
+      text: 首次查询或预占会幂等创建 3 点免费额度，批次默认 12 个月有效。
+      truncated: false
+  - id: A2
+    source: brief.md
+    text: 可授予新的额度批次并正确计算余额；过期批次不能用于生成。
+    result: passed
+    reason:
+      text: 批次独立记录有效期，过期批次不进入余额和预占。
+      truncated: false
+  - id: A3
+    source: brief.md
+    text: 消耗 1 点时按最早到期批次 FIFO 选择，跨批次消耗结果可审计。
+    result: passed
+    reason:
+      text: 预占按最早到期、创建时间和批次 ID 排序，临时不足会回滚。
+      truncated: false
+  - id: A4
+    source: brief.md
+    text: 同一生成任务只能成功结算一次；失败或取消会释放预占额度，最终不扣除额度。
+    result: passed
+    reason:
+      text: 预占、成功结算、失败释放和重复操作均有幂等处理。
+      truncated: false
+  - id: A5
+    source: brief.md
+    text: 余额不足或没有未过期额度时，生成前返回 `INSUFFICIENT_CREDITS`，不调用 Provider。
+    result: passed
+    reason:
+      text: 生成前预占额度，余额不足直接返回 INSUFFICIENT_CREDITS，不进入 Provider。
+      truncated: false
+  - id: A6
+    source: brief.md
+    text: 生成成功后可以保存一个作品，作品包含原图/效果图引用和生成参数，并按用户身份隔离。
+    result: passed
+    reason:
+      text: 作品保存包含用户归属、生成 ID、图片引用、参数和创建时间。
+      truncated: false
+  - id: A7
+    source: brief.md
+    text: 用户在新的服务实例/设备上下文中通过同一用户身份可以列出和读取自己的作品；其他用户读取返回 `NOT_FOUND`。
+    result: passed
+    reason:
+      text: 作品服务按 userId 隔离，共享存储时不同服务实例可读取同一用户作品。
+      truncated: false
+  - id: A8
+    source: brief.md
+    text: 自动化测试覆盖注册赠送、批次过期、FIFO、并发/幂等结算、失败释放、余额不足和作品归属。
+    result: passed
+    reason:
+      text: 18 项测试已覆盖并发预占、成功结算、余额不足阻止 Provider、过期、FIFO、幂等、失败释放和作品归属。
+      truncated: false
+builder_handoff:
+  candidate_id: fc21e7b1-3e97-4d9f-aa4c-8bb5f80d51fb
+  identity_provider: skill-coordinated
+  builder_execution_ref: skill-coordinated:builder:9582ffbd-3ac2-4b12-b869-c7d5c07749b7
+  iteration: 2
+  summary:
+    text: 补充第二轮验收覆盖：并发预占只允许余额数量成功，成功生成后额度结算，额度耗尽时 Provider 调用次数为
+      0；保留第一轮的额度账本、生成预占/结算/释放和作品隔离实现。
+    truncated: false
+  addressed_acceptance_ids:
+    - A1
+    - A2
+    - A3
+    - A4
+    - A5
+    - A6
+    - A7
+    - A8
+  checks:
+    - name:
+        text: npm test
+        truncated: false
+      result: passed
+      note:
+        text: 18 tests passed, including concurrent reservation, successful settlement,
+          insufficient-credit provider suppression, expiry/FIFO, failure release
+          and works ownership.
+        truncated: false
+    - name:
+        text: npm run lint
+        truncated: false
+      result: passed
+      note:
+        text: ESLint completed without errors.
+        truncated: false
+    - name:
+        text: npm run build
+        truncated: false
+      result: passed
+      note:
+        text: Vite production build completed.
+        truncated: false
+    - name:
+        text: npm run typecheck
+        truncated: false
+      result: passed
+      note:
+        text: JavaScript project; package script reports syntax check boundary.
+        truncated: false
+  checks_truncated: false
+  known_limits:
+    - text: 当前额度和作品使用内存存储，生产数据库适配器属于后续基础设施工作。
+      truncated: false
+    - text: 当前作品只保存受控引用和元数据，真实对象存储属于后续基础设施工作。
+      truncated: false
+    - text: 当前验证服务层边界，尚未接入真实 HTTP 路由或支付订单回调。
+      truncated: false
+  known_limits_truncated: false
+  submitted_at: 2026-08-25T04:32:26.732Z
+blockers: []
+verification:
+  candidate_id: fc21e7b1-3e97-4d9f-aa4c-8bb5f80d51fb
+  identity_provider: skill-coordinated
+  verifier_execution_ref: skill-coordinated:verifier:19555d7a-8810-424a-927d-0ebe110e47f4
+  iteration: 2
+  attempt: 1
+  assurance: skill-coordinated
+  verdict: pass
+  checks:
+    - id: test
+      name:
+        text: npm test
+        truncated: false
+      argv_display:
+        - text: test
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 3038
+    - id: lint
+      name:
+        text: npm run lint
+        truncated: false
+      argv_display:
+        - text: run
+          truncated: false
+        - text: lint
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 2713
+    - id: build
+      name:
+        text: npm run build
+        truncated: false
+      argv_display:
+        - text: run
+          truncated: false
+        - text: build
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 1901
+    - id: typecheck
+      name:
+        text: npm run typecheck
+        truncated: false
+      argv_display:
+        - text: run
+          truncated: false
+        - text: typecheck
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 1055
+  summary:
+    text: 第二轮已补齐 A8 所需测试覆盖，A1-A8 全部通过；当前 Change 满足服务层范围和验收要求。
+    truncated: false
+  risks:
+    - text: 当前额度和作品存储为内存实现，生产数据库和对象存储属于后续基础设施工作。
+      truncated: false
+    - text: 真实数据库并发条件更新仍属于后续生产适配。
+      truncated: false
+    - text: 当前跨设备语义通过共享内存 Store 验证，尚未接入真实数据库或对象存储。
+      truncated: false
+  risks_truncated: false
+  completed_at: 2026-08-25T04:34:39.628Z
+history:
+  - goal_cycle: 1
+    iteration: 1
+    attempt: 1
+    outcome: fail
+    unresolved_ids:
+      - A8
+    summary:
+      text: 核心服务实现符合 A1-A7，但 A8 的关键测试覆盖不完整，需要补测试后重新 Verify。
+      truncated: false
+    completed_at: 2026-08-25T04:30:30.847Z
+  - goal_cycle: 1
+    iteration: 2
+    attempt: 1
+    outcome: pass
+    unresolved_ids: []
+    summary:
+      text: 第二轮已补齐 A8 所需测试覆盖，A1-A8 全部通过；当前 Change 满足服务层范围和验收要求。
+      truncated: false
+    completed_at: 2026-08-25T04:34:39.628Z
+history_overflow:
+  dropped_entries: 0
+  first_dropped_at: null
+  last_dropped_at: null
+  outcome_counts:
+    pass: 0
+    fail: 0
+    blocked: 0
+    execution-error: 0
+    recovery: 0
+verification_result: pass
+verification_report: verification.md
+archived: true
+created_at: 2026-08-25T04:12:42.770Z

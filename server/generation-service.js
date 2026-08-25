@@ -62,7 +62,7 @@ export class ProviderRegistry {
 }
 
 export class GenerationService {
-  constructor({ authService, store = new MemoryGenerationStore(), providers = new ProviderRegistry(), providerName = 'default', clock = () => Date.now(), maxImageBytes = DEFAULT_MAX_IMAGE_BYTES, providerTimeoutMs = 30_000 } = {}) {
+  constructor({ authService, store = new MemoryGenerationStore(), providers = new ProviderRegistry(), providerName = 'default', clock = () => Date.now(), maxImageBytes = DEFAULT_MAX_IMAGE_BYTES, providerTimeoutMs = 30_000, creditLedger = null } = {}) {
     if (!authService) throw new Error('authService is required')
     this.authService = authService
     this.store = store
@@ -71,6 +71,7 @@ export class GenerationService {
     this.clock = clock
     this.maxImageBytes = maxImageBytes
     this.providerTimeoutMs = providerTimeoutMs
+    this.creditLedger = creditLedger
   }
 
   createGeneration({ sessionToken, image, params }) {
@@ -79,7 +80,10 @@ export class GenerationService {
     const validation = validateRequest({ image, params }, this.maxImageBytes)
     if (validation) return Promise.resolve(validation)
     const id = `generation_${randomUUID()}`
+    const reservation = this.creditLedger?.reserveForUser({ userId: user.id, operationId: id, amount: 1 })
+    if (reservation && !reservation.ok) return Promise.resolve(reservation)
     const task = { id, userId: user.id, status: 'queued', createdAt: this.clock(), updatedAt: this.clock(), input: { name: image.name ?? 'upload', type: image.type, size: imageBytes(image).length }, params: { ...params, preferences: { ...(params.preferences ?? {}) } } }
+    if (reservation) task.reservationId = reservation.reservation.id
     this.store.tasks.set(id, task)
     queueMicrotask(() => this.#run(task, image))
     return Promise.resolve({ ok: true, task: this.#publicTask(task) })
@@ -105,21 +109,27 @@ export class GenerationService {
     task.updatedAt = this.clock()
     const provider = this.providers.get(this.providerName)
     if (!provider) return this.#fail(task, { code: 'PROVIDER_UNAVAILABLE' })
+    let timeoutId
     try {
       const output = await Promise.race([
         provider.generate({ image, params: task.params }),
-        new Promise((_, reject) => setTimeout(() => reject({ code: 'PROVIDER_TIMEOUT' }), this.providerTimeoutMs)),
+        new Promise((_, reject) => { timeoutId = setTimeout(() => reject({ code: 'PROVIDER_TIMEOUT' }), this.providerTimeoutMs) }),
       ])
+      clearTimeout(timeoutId)
       if (!output?.effectImage?.url) return this.#fail(task, { code: 'INVALID_PROVIDER_RESPONSE' })
       task.status = 'succeeded'
+      const settlement = this.creditLedger?.settleForUser({ userId: task.userId, reservationId: task.reservationId })
+      if (settlement && !settlement.ok) return this.#fail(task, { code: 'CREDIT_SETTLEMENT_FAILED' })
       task.result = { original: { ...task.input }, effectImage: { url: String(output.effectImage.url), mimeType: output.effectImage.mimeType ?? 'image/jpeg' } }
       task.updatedAt = this.clock()
     } catch (reason) {
+      clearTimeout(timeoutId)
       this.#fail(task, safeFailure(reason))
     }
   }
 
   #fail(task, reason) {
+    if (this.creditLedger && task.reservationId) this.creditLedger.releaseForUser({ userId: task.userId, reservationId: task.reservationId })
     task.status = 'failed'
     task.error = { code: reason.code, message: reason.message ?? '暂时无法生成设计，请稍后重试。' }
     task.updatedAt = this.clock()
