@@ -1,0 +1,18 @@
+{
+  "kind": "builder-handoff",
+  "summary": "修复上一轮 Verify 的四项失败：未知非 GET 路由不再提前解析 JSON；Content-Type 改为精确媒体类型校验；管理员邮箱禁止公开注册并改由服务器内部预置；JSON 上限提高到 16 MiB，并补齐对应回归断言。",
+  "addressed_acceptance_ids": ["A1", "A5", "A6", "A7"],
+  "checks": [
+    { "name": "npm test", "result": "passed", "note": "33 项测试通过；API 测试覆盖未知 POST 路由、管理员邮箱抢注、无效 JSON 媒体类型及请求大小边界。" },
+    { "name": "npm run lint", "result": "passed", "note": "ESLint 无错误。" },
+    { "name": "npm run build", "result": "passed", "note": "Vite 构建通过。" },
+    { "name": "npm run typecheck", "result": "passed", "note": "JavaScript 项目语法边界通过。" }
+  ],
+  "known_limits": [
+    "当前 Store 仍为内存实现，进程重启会丢失数据。",
+    "本地 generation/payment Provider 只用于 UI 集成开发，不代表真实 Provider 或支付平台。",
+    "生产 CSRF、速率限制、HTTPS、安全响应头和持久化仍属于后续生产化工作。",
+    "当前图片上传使用受限 JSON base64；生产对象存储和 multipart 尚未实现。",
+    "管理员仅能通过服务器内部 provisionAdmin 入口预置；启动脚本从 ADMIN_EMAIL/ADMIN_PASSWORD 环境变量读取本地配置，不含默认密码。"
+  ]
+}

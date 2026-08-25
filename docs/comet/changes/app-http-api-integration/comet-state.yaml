@@ -1,0 +1,273 @@
+schema: comet.native.v4
+name: app-http-api-integration
+language: zh-CN
+phase: archive
+status: active
+state_version: 12
+brief: brief.md
+spec_changes: []
+workspace:
+  isolation: worktree
+  change_branch: comet/app-http-api-integration
+  target_branch: comet/cross-surface-qa-release-readiness
+  finish: merge
+loop:
+  stage: archive-ready
+  goal_cycle: 1
+  iteration: 2
+  attempt: 1
+  retry_epoch: 0
+  failed_iteration_count: 1
+  no_progress_count: 0
+  execution_failure_count: 0
+  previous_unresolved_ids: []
+  next_action: archive
+acceptance:
+  - id: A1
+    source: brief.md
+    text: "A1: 本地 HTTP Server 可启动、响应 `/api/health`，并对未知路由返回安全的 JSON `NOT_FOUND`。"
+    result: passed
+    reason:
+      text: 真实临时 HTTP Server 验证通过：GET /api/health 返回 200 ready；无请求体和 Content-Type 的
+        POST /api/missing 返回 404 及 JSON NOT_FOUND。
+      truncated: false
+  - id: A2
+    source: brief.md
+    text: "A2: 注册、登录、会话查询、退出和密码找回路由调用现有 AuthService；登录成功设置 HttpOnly、SameSite
+      Cookie，未认证请求返回 `UNAUTHORIZED`。"
+    result: passed
+    reason:
+      text: 注册、登录、会话、退出和密码找回路由均连接 AuthService；未认证会话返回 401。生产模式登录 Cookie 实测包含
+        HttpOnly、SameSite=Lax、Secure，登录响应不含 sessionToken，密码重置响应不回显重置令牌。
+      truncated: false
+  - id: A3
+    source: brief.md
+    text: "A3: 已认证用户可通过 HTTP 创建和查询生成任务；图片和参数进入现有 GenerationService，任务所有权隔离保持有效。"
+    result: passed
+    reason:
+      text: 真实 HTTP 请求成功创建和查询生成任务；10 MiB PNG 进入 GenerationService 并返回 202。请求体伪造
+        sessionToken 无法覆盖 Cookie 身份，其他用户读取任务返回 404。
+      truncated: false
+  - id: A4
+    source: brief.md
+    text: "A4: 已认证用户可查询额度、创建/查询订单、创建/列表/读取作品；其他用户不能读取其订单或作品。"
+    result: passed
+    reason:
+      text: 额度、订单和作品路由连接现有服务。请求体 sessionToken 无法覆盖 Cookie 身份，其他用户读取作品和订单均返回 404。
+      truncated: false
+  - id: A5
+    source: brief.md
+    text: "A5: 管理员 Provider 路由调用现有 AdminProviderService；普通用户和未登录用户不能读取或修改 Provider
+      配置，公开响应不包含密钥明文。"
+    result: passed
+    reason:
+      text: 公开注册大小写变体 ADMIN@example.com 实测返回 409，未创建用户且不能登录；内部 provisionAdmin
+        后管理员可登录并创建 Provider。未登录和普通用户分别返回 401、403；请求体 sessionToken 和 providerId
+        无法覆盖 Cookie 或路径身份；Provider及审计响应均不含密钥明文。
+      truncated: false
+  - id: A6
+    source: brief.md
+    text: "A6: API 统一限制 JSON 请求大小、校验 Content-Type、返回安全错误，不向响应或日志暴露会话令牌、密码、Provider
+      密钥、支付签名或内部异常。"
+    result: passed
+    reason:
+      text: application/json-evil 实测返回 415且未创建用户；未知路由不受请求体校验干扰。默认上限为16777216字节，完整10
+        MiB图片的Base64
+        JSON实测为13981249字节并成功返回202。响应未暴露会话令牌、密码、Provider密钥、支付签名或内部异常。
+      truncated: false
+  - id: A7
+    source: brief.md
+    text: "A7: 自动化测试覆盖健康检查、认证
+      Cookie、用户隔离、生成、作品、额度、订单、管理员权限、请求限制和错误脱敏；test、lint、build、typecheck 全部通过。"
+    result: passed
+    reason:
+      text: 独立复跑 npm
+        test，33/33通过；新增测试覆盖未知POST路由、管理员邮箱抢注、无效JSON媒体类型和请求大小边界。Runtime提供的npm run
+        lint、npm run build、npm run
+        typecheck结果均通过；验收要求覆盖的Cookie、隔离、身份覆盖和脱敏边界已额外通过真实HTTP探测。
+      truncated: false
+builder_handoff:
+  candidate_id: 39f13073-73c3-4dd7-8666-cf5ea8fdac5d
+  identity_provider: skill-coordinated
+  builder_execution_ref: skill-coordinated:builder:be34a56d-d5a2-42df-af8f-9d9bdad7dcd8
+  iteration: 2
+  summary:
+    text: 修复上一轮 Verify 的四项失败：未知非 GET 路由不再提前解析 JSON；Content-Type
+      改为精确媒体类型校验；管理员邮箱禁止公开注册并改由服务器内部预置；JSON 上限提高到 16 MiB，并补齐对应回归断言。
+    truncated: false
+  addressed_acceptance_ids:
+    - A1
+    - A5
+    - A6
+    - A7
+  checks:
+    - name:
+        text: npm test
+        truncated: false
+      result: passed
+      note:
+        text: 33 项测试通过；API 测试覆盖未知 POST 路由、管理员邮箱抢注、无效 JSON 媒体类型及请求大小边界。
+        truncated: false
+    - name:
+        text: npm run lint
+        truncated: false
+      result: passed
+      note:
+        text: ESLint 无错误。
+        truncated: false
+    - name:
+        text: npm run build
+        truncated: false
+      result: passed
+      note:
+        text: Vite 构建通过。
+        truncated: false
+    - name:
+        text: npm run typecheck
+        truncated: false
+      result: passed
+      note:
+        text: JavaScript 项目语法边界通过。
+        truncated: false
+  checks_truncated: false
+  known_limits:
+    - text: 当前 Store 仍为内存实现，进程重启会丢失数据。
+      truncated: false
+    - text: 本地 generation/payment Provider 只用于 UI 集成开发，不代表真实 Provider 或支付平台。
+      truncated: false
+    - text: 生产 CSRF、速率限制、HTTPS、安全响应头和持久化仍属于后续生产化工作。
+      truncated: false
+    - text: 当前图片上传使用受限 JSON base64；生产对象存储和 multipart 尚未实现。
+      truncated: false
+    - text: 管理员仅能通过服务器内部 provisionAdmin 入口预置；启动脚本从 ADMIN_EMAIL/ADMIN_PASSWORD
+        环境变量读取本地配置，不含默认密码。
+      truncated: false
+  known_limits_truncated: false
+  submitted_at: 2026-08-25T06:18:44.402Z
+blockers: []
+verification:
+  candidate_id: 39f13073-73c3-4dd7-8666-cf5ea8fdac5d
+  identity_provider: skill-coordinated
+  verifier_execution_ref: skill-coordinated:verifier:14238ae7-a6d3-466d-98e6-0942593aa0da
+  iteration: 2
+  attempt: 1
+  assurance: skill-coordinated
+  verdict: pass
+  checks:
+    - id: test
+      name:
+        text: npm test
+        truncated: false
+      argv_display:
+        - text: test
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 4368
+    - id: lint
+      name:
+        text: npm run lint
+        truncated: false
+      argv_display:
+        - text: run
+          truncated: false
+        - text: lint
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 3143
+    - id: build
+      name:
+        text: npm run build
+        truncated: false
+      argv_display:
+        - text: run
+          truncated: false
+        - text: build
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 2022
+    - id: typecheck
+      name:
+        text: npm run typecheck
+        truncated: false
+      argv_display:
+        - text: run
+          truncated: false
+        - text: typecheck
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 978
+  summary:
+    text: iteration 2
+      验证通过。上一轮未知POST路由、管理员邮箱抢注提权、Content-Type前缀绕过和JSON容量不足问题均已修复并真实复现验证；A1-A7全部通过。
+    truncated: false
+  risks:
+    - text: 当前认证、额度、订单、作品和Provider配置仍使用内存Store，进程重启会丢失数据，不具备生产持久化能力。
+      truncated: false
+    - text: 真实支付、图像Provider、生产CSRF防护、速率限制、HTTPS及安全响应头仍属于后续生产化范围。
+      truncated: false
+    - text: 当前16 MiB JSON上限足以承载10 MiB图片的Base64与现有JSON开销，但生产上传仍应迁移到对象存储或multipart。
+      truncated: false
+  risks_truncated: false
+  completed_at: 2026-08-25T07:53:59.168Z
+history:
+  - goal_cycle: 1
+    iteration: 1
+    attempt: 1
+    outcome: execution-error
+    unresolved_ids: []
+    summary:
+      text: "Native Verifier response was invalid: Native Verifier risks must be text
+        entries"
+      truncated: false
+    completed_at: 2026-08-25T06:06:34.598Z
+  - goal_cycle: 1
+    iteration: 1
+    attempt: 2
+    outcome: fail
+    unresolved_ids:
+      - A1
+      - A5
+      - A6
+      - A7
+    summary:
+      text: 验证失败。Cookie、令牌不回显、跨用户隔离、服务端 sessionToken/providerId
+        优先级及密钥脱敏实现正确，但存在可实际利用的管理员自助注册提权，以及未知路由和 Content-Type 边界不符合 A1/A6；现有 33
+        项测试未覆盖这些缺陷。
+      truncated: false
+    completed_at: 2026-08-25T06:13:12.829Z
+  - goal_cycle: 1
+    iteration: 2
+    attempt: 1
+    outcome: pass
+    unresolved_ids: []
+    summary:
+      text: iteration 2
+        验证通过。上一轮未知POST路由、管理员邮箱抢注提权、Content-Type前缀绕过和JSON容量不足问题均已修复并真实复现验证；A1-A7全部通过。
+      truncated: false
+    completed_at: 2026-08-25T07:53:59.168Z
+history_overflow:
+  dropped_entries: 0
+  first_dropped_at: null
+  last_dropped_at: null
+  outcome_counts:
+    pass: 0
+    fail: 0
+    blocked: 0
+    execution-error: 0
+    recovery: 0
+verification_result: pass
+verification_report: verification.md
+archived: false
+created_at: 2026-08-25T05:46:21.710Z

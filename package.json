@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "api:start": "node server/start-api.js",
     "preview": "vite preview",
     "lint": "eslint .",
     "qa:browser": "node tests/cross-surface.playwright.mjs",
