@@ -3,14 +3,14 @@ name: admin-web-surface
 language: zh-CN
 phase: archive
 status: active
-state_version: 6
+state_version: 7
 brief: brief.md
 spec_changes: []
 workspace:
   isolation: worktree
   change_branch: comet/admin-web-surface
   target_branch: comet/cross-surface-qa-release-readiness
-  finish: null
+  finish: merge
 loop:
   stage: archive-ready
   goal_cycle: 1
