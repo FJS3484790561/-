@@ -1,0 +1,15 @@
+{
+  "kind": "builder-handoff",
+  "summary": "实现管理员 Provider 配置服务：会话认证、管理员权限、Provider 配置生命周期、AES-256-GCM 密钥加密、密钥脱敏、启停控制、授权范围和审计记录；新增 4 组安全与生命周期测试。",
+  "addressed_acceptance_ids": ["A1", "A2", "A3", "A4", "A5", "A6", "A7"],
+  "checks": [
+    { "name": "npm test", "result": "passed", "note": "27 tests passed, including 4 admin Provider tests." },
+    { "name": "npm run lint", "result": "passed", "note": "ESLint completed without errors." },
+    { "name": "npm run build", "result": "passed", "note": "Vite production build completed." },
+    { "name": "npm run typecheck", "result": "passed", "note": "JavaScript project syntax boundary completed." }
+  ],
+  "known_limits": [
+    "当前使用内存存储；生产数据库、密钥管理服务和 HTTP 路由属于后续生产准备。",
+    "当前未接入真实 Provider、生产凭据、服务器或域名。"
+  ]
+}

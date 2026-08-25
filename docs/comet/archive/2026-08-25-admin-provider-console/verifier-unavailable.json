@@ -1,0 +1,8 @@
+{
+  "kind": "verifier-unavailable",
+  "summary": "无法启动独立语义 Verifier：当前任务并发额度已满。Runtime 已完成并通过 npm test、npm run lint、npm run build、npm run typecheck 四项检查；A1-A7 尚缺独立语义复核。",
+  "stateVersion": 4,
+  "iteration": 1,
+  "attempt": 1,
+  "verifierExecutionRef": "skill-coordinated:verifier:de041549-271f-4cdb-b345-2b6fc9b12939"
+}
