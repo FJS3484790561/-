@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { createServer as createViteServer } from 'vite'
 
-const baseUrl = 'http://127.0.0.1:4174/'
+const baseUrl = 'http://127.0.0.1:4174/admin'
 const apiUrl = 'http://127.0.0.1:8787'
 const adminPassword = 'qa-admin-password'
 const userPassword = 'qa-user-password'
