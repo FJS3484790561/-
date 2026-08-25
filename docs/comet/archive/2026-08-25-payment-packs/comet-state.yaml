@@ -1,0 +1,259 @@
+schema: comet.native.v4
+name: payment-packs
+language: zh-CN
+phase: archive
+status: done
+state_version: 11
+brief: brief.md
+spec_changes: []
+workspace:
+  isolation: branch
+  change_branch: comet/payment-packs
+  target_branch: master
+  finish: merge
+loop:
+  stage: done
+  goal_cycle: 1
+  iteration: 2
+  attempt: 1
+  retry_epoch: 0
+  failed_iteration_count: 1
+  no_progress_count: 0
+  execution_failure_count: 0
+  previous_unresolved_ids: []
+  next_action: null
+acceptance:
+  - id: A1
+    source: brief.md
+    text: 用户创建 10/30/100 元订单时，订单分别记录 12/45/200 点；1-9 元整数金额分别记录同额点数。
+    result: passed
+    reason:
+      text: 商品映射符合 1-9 元 1:1、10/30/100 元固定套餐规则。
+      truncated: false
+  - id: A2
+    source: brief.md
+    text: 未登录用户不能创建订单或读取订单。
+    result: passed
+    reason:
+      text: 未登录创建和查询订单均返回 UNAUTHORIZED。
+      truncated: false
+  - id: A3
+    source: brief.md
+    text: 订单金额、用户归属和商品点数在创建后不可被客户端请求改写。
+    result: passed
+    reason:
+      text: 金额、用户归属和点数由服务端计算并保存，客户端不能改写。
+      truncated: false
+  - id: A4
+    source: brief.md
+    text: 待支付订单不会增加额度；支付失败或取消不会增加额度。
+    result: passed
+    reason:
+      text: pending、failed、canceled 状态不应到账，现有 failed/canceled 路径已覆盖。
+      truncated: false
+  - id: A5
+    source: brief.md
+    text: 合法支付成功回调将订单标记为 `paid`，并向额度账本授予一个 12 个月有效的充值批次。
+    result: passed
+    reason:
+      text: 只有 paid、failed、canceled 回调可处理，pending 返回 INVALID_PAYMENT_EVENT；paid 会授予 12
+        个月额度批次。
+      truncated: false
+  - id: A6
+    source: brief.md
+    text: 同一 Provider 事件重复回调、同一订单重复回调或重试到账均只增加一次额度。
+    result: passed
+    reason:
+      text: 正常重复事件和已支付订单不会重复授予额度。
+      truncated: false
+  - id: A7
+    source: brief.md
+    text: 金额不匹配、未知订单、错误用户或伪造签名/事件不会到账，并返回不泄露内部信息的安全结果。
+    result: passed
+    reason:
+      text: 所有事件先验签；未知订单、错误用户、金额不匹配和伪造签名均不会到账并返回安全错误。
+      truncated: false
+  - id: A8
+    source: brief.md
+    text: 用户可以查询自己的订单状态；其他用户查询返回 `NOT_FOUND`。
+    result: passed
+    reason:
+      text: 订单读取按 userId 隔离。
+      truncated: false
+  - id: A9
+    source: brief.md
+    text: 自动化测试覆盖商品映射、订单状态转换、回调幂等、金额校验、失败不入账和用户隔离。
+    result: passed
+    reason:
+      text: 23 项测试覆盖商品映射、订单状态、成功/失败/取消、金额和签名校验、pending、未知订单、错误用户及重复到账。
+      truncated: false
+builder_handoff:
+  candidate_id: 42955fa0-f25b-46ff-911e-ab89a990e62b
+  identity_provider: skill-coordinated
+  builder_execution_ref: skill-coordinated:builder:037ce629-28cf-407a-85a5-6611ae16261c
+  iteration: 2
+  summary:
+    text: 修复 Verifier 发现的支付安全边界：回调只接受 paid/failed/canceled，所有事件先验签再执行幂等返回；补充 pending
+      不到账、伪造重复事件、未知订单、错误用户和不同事件重复回调测试。
+    truncated: false
+  addressed_acceptance_ids:
+    - A1
+    - A2
+    - A3
+    - A4
+    - A5
+    - A6
+    - A7
+    - A8
+    - A9
+  checks:
+    - name:
+        text: npm test
+        truncated: false
+      result: passed
+      note:
+        text: 23 tests passed, including callback status allowlist, duplicate signature
+          validation, unknown/wrong-user events, idempotent credit grant, expiry
+          and user isolation.
+        truncated: false
+    - name:
+        text: npm run lint
+        truncated: false
+      result: passed
+      note:
+        text: ESLint completed without errors.
+        truncated: false
+    - name:
+        text: npm run build
+        truncated: false
+      result: passed
+      note:
+        text: Vite production build completed.
+        truncated: false
+    - name:
+        text: npm run typecheck
+        truncated: false
+      result: passed
+      note:
+        text: JavaScript project; package script reports syntax check boundary.
+        truncated: false
+  checks_truncated: false
+  known_limits:
+    - text: 当前支付和订单使用内存存储，生产数据库和真实支付平台适配器属于部署/生产工作。
+      truncated: false
+    - text: 当前没有 HTTP 路由、真实签名密钥、商户凭据或生产回调域名。
+      truncated: false
+    - text: 默认不退款；实际收费上线需遵守支付平台规则和适用法律。
+      truncated: false
+  known_limits_truncated: false
+  submitted_at: 2026-08-25T04:56:08.455Z
+blockers: []
+verification:
+  candidate_id: 42955fa0-f25b-46ff-911e-ab89a990e62b
+  identity_provider: skill-coordinated
+  verifier_execution_ref: skill-coordinated:verifier:e9c5cd22-beea-46a2-b58d-96007e425f8d
+  iteration: 2
+  attempt: 1
+  assurance: skill-coordinated
+  verdict: pass
+  checks:
+    - id: test
+      name:
+        text: npm test
+        truncated: false
+      argv_display:
+        - text: test
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 4058
+    - id: lint
+      name:
+        text: npm run lint
+        truncated: false
+      argv_display:
+        - text: run
+          truncated: false
+        - text: lint
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 2885
+    - id: build
+      name:
+        text: npm run build
+        truncated: false
+      argv_display:
+        - text: run
+          truncated: false
+        - text: build
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 2016
+    - id: typecheck
+      name:
+        text: npm run typecheck
+        truncated: false
+      argv_display:
+        - text: run
+          truncated: false
+        - text: typecheck
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 1011
+  summary:
+    text: A1-A9 全部通过；pending 回调不再到账，已知事件也必须先验签才能进入幂等返回。
+    truncated: false
+  risks:
+    - text: 支付订单和额度仍为内存存储，生产数据库和原子性属于后续适配。
+      truncated: false
+    - text: 真实支付平台验签、HTTP 回调路由和商户凭据尚未接入。
+      truncated: false
+  risks_truncated: false
+  completed_at: 2026-08-25T05:03:43.077Z
+history:
+  - goal_cycle: 1
+    iteration: 1
+    attempt: 1
+    outcome: fail
+    unresolved_ids:
+      - A5
+      - A7
+      - A9
+    summary:
+      text: 主体范围正确，但回调状态和重复事件签名校验存在安全缺陷，需要修复并补测试后重新 Verify。
+      truncated: false
+    completed_at: 2026-08-25T04:55:04.572Z
+  - goal_cycle: 1
+    iteration: 2
+    attempt: 1
+    outcome: pass
+    unresolved_ids: []
+    summary:
+      text: A1-A9 全部通过；pending 回调不再到账，已知事件也必须先验签才能进入幂等返回。
+      truncated: false
+    completed_at: 2026-08-25T05:03:43.077Z
+history_overflow:
+  dropped_entries: 0
+  first_dropped_at: null
+  last_dropped_at: null
+  outcome_counts:
+    pass: 0
+    fail: 0
+    blocked: 0
+    execution-error: 0
+    recovery: 0
+verification_result: pass
+verification_report: verification.md
+archived: true
+created_at: 2026-08-25T04:39:47.556Z
