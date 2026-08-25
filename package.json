@@ -9,7 +9,7 @@
     "api:start": "node server/start-api.js",
     "preview": "vite preview",
     "lint": "eslint .",
-    "qa:browser": "node tests/cross-surface.playwright.mjs",
+    "qa:browser": "node tests/user-surfaces.playwright.mjs",
     "typecheck": "node -e \"console.log('TYPECHECK: N/A - prototype uses JavaScript; runtime build is the current syntax check')\"",
     "test": "node --test"
   },
