@@ -1,0 +1,212 @@
+schema: comet.native.v4
+name: account-session-foundation
+language: zh-CN
+phase: archive
+status: active
+state_version: 8
+brief: brief.md
+spec_changes: []
+workspace:
+  isolation: branch
+  change_branch: comet/account-session-foundation
+  target_branch: master
+  finish: merge
+loop:
+  stage: archive-ready
+  goal_cycle: 1
+  iteration: 1
+  attempt: 1
+  retry_epoch: 0
+  failed_iteration_count: 0
+  no_progress_count: 0
+  execution_failure_count: 0
+  previous_unresolved_ids: []
+  next_action: archive
+acceptance:
+  - id: A1
+    source: brief.md
+    text: "A1: 用户提交合法邮箱和密码后，可以创建账号；重复邮箱被拒绝并显示可理解错误。"
+    result: passed
+    reason:
+      text: AuthService 对邮箱进行规范化和格式校验，使用 scrypt 哈希保存密码，重复邮箱返回
+        EMAIL_ALREADY_REGISTERED；Runtime 测试通过。
+      truncated: false
+  - id: A2
+    source: brief.md
+    text: "A2: 已注册用户可以登录和退出；错误密码不会建立会话。"
+    result: passed
+    reason:
+      text: 正确密码建立会话，错误密码和未知邮箱均返回 INVALID_CREDENTIALS，logout 删除会话摘要；Runtime 测试通过。
+      truncated: false
+  - id: A3
+    source: brief.md
+    text: "A3: 用户请求密码重置后，系统不会泄露邮箱是否存在，并对有效请求生成一次性、限时重置流程。"
+    result: passed
+    reason:
+      text: 未知邮箱与有效邮箱请求均返回 {ok:true}，有效邮箱生成限时重置流程；重置令牌仅以 SHA-256 摘要保存。
+      truncated: false
+  - id: A4
+    source: brief.md
+    text: "A4: 有效重置链接只能使用一次；过期或已使用链接不能修改密码。"
+    result: passed
+    reason:
+      text: 重置成功后删除令牌摘要，重复使用和超过 30 分钟后均拒绝；Runtime 测试通过。
+      truncated: false
+  - id: A5
+    source: brief.md
+    text: "A5: 登录会话在刷新后可以恢复，退出后旧会话不能继续访问受保护资源。"
+    result: passed
+    reason:
+      text: 会话以令牌摘要索引，可通过 getSession 恢复身份；logout 后旧令牌返回 null；Runtime 测试通过。
+      truncated: false
+  - id: A6
+    source: brief.md
+    text: "A6: 未登录用户访问受保护用户资源时得到未授权结果；用户只能以自己的身份访问后续资源边界。"
+    result: passed
+    reason:
+      text: 无效或已退出会话返回 null，活动会话绑定 userId 并仅返回对应用户摘要；当前 Change 未包含资源端点。
+      truncated: false
+builder_handoff:
+  candidate_id: a543cb49-ee98-4a5b-a201-235bcc055cb7
+  identity_provider: skill-coordinated
+  builder_execution_ref: skill-coordinated:builder:117ecfbf-82b1-4272-bb57-9e1e95ddf54a
+  iteration: 1
+  summary:
+    text: 实现了账号与会话基础模块：邮箱密码注册、登录、退出、会话查询，以及一次性限时密码重置流程。密码使用 scrypt
+      哈希，重置令牌只保存摘要，登录和重置成功后返回安全的用户摘要。未实现支付、额度、AI 生成、作品持久化、管理员配置或生产邮件供应商。
+    truncated: false
+  addressed_acceptance_ids:
+    - A1
+    - A2
+    - A3
+    - A4
+    - A5
+    - A6
+  checks:
+    - name:
+        text: npm test
+        truncated: false
+      result: passed
+      note:
+        text: "5 tests passed: registration, duplicate email, login/logout, reset expiry
+          and one-time use, unknown email response."
+        truncated: false
+    - name:
+        text: npm run build
+        truncated: false
+      result: passed
+      note:
+        text: Vite production build completed.
+        truncated: false
+    - name:
+        text: npm run lint
+        truncated: false
+      result: passed
+      note:
+        text: ESLint completed without errors.
+        truncated: false
+  checks_truncated: false
+  known_limits:
+    - text: MemoryAuthStore is a test/foundation store; production persistence belongs
+        to a later Change.
+      truncated: false
+    - text: Mailer is an injected abstraction; production email provider belongs to
+        deployment/security work.
+      truncated: false
+    - text: HTTP routes and frontend auth screens are not part of this foundation
+        candidate yet.
+      truncated: false
+  known_limits_truncated: false
+  submitted_at: 2026-08-25T03:17:30.422Z
+blockers: []
+verification:
+  candidate_id: a543cb49-ee98-4a5b-a201-235bcc055cb7
+  identity_provider: skill-coordinated
+  verifier_execution_ref: skill-coordinated:verifier:e1b6090b-0532-4527-a1ce-50ea8eaec323
+  iteration: 1
+  attempt: 1
+  assurance: skill-coordinated
+  verdict: pass
+  checks:
+    - id: test
+      name:
+        text: npm test
+        truncated: false
+      argv_display:
+        - text: test
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 2227
+    - id: build
+      name:
+        text: npm run build
+        truncated: false
+      argv_display:
+        - text: run
+          truncated: false
+        - text: build
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 1977
+    - id: lint
+      name:
+        text: npm run lint
+        truncated: false
+      argv_display:
+        - text: run
+          truncated: false
+        - text: lint
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 2912
+  summary:
+    text: 独立 Verifier 判定 A1-A6 在当前内存服务层基础模块范围内全部通过。密码使用 scrypt
+      哈希，令牌仅保存摘要；重置令牌限时且一次性，未知邮箱不泄露，退出会话失效，用户身份通过 userId 隔离。上述
+      HTTP、持久化和安全运营能力保留为后续工作。
+    truncated: false
+  risks:
+    - text: MemoryAuthStore 进程重启后丢失，持久化属于后续 Change。
+      truncated: false
+    - text: 尚无 HTTP 路由、HttpOnly/SameSite/Secure Cookie 集成。
+      truncated: false
+    - text: 尚无密码重置请求频率限制。
+      truncated: false
+    - text: 尚无实际受保护资源 HTTP 端点；A6 仅验证服务层身份边界。
+      truncated: false
+  risks_truncated: false
+  completed_at: 2026-08-25T03:24:03.838Z
+history:
+  - goal_cycle: 1
+    iteration: 1
+    attempt: 1
+    outcome: pass
+    unresolved_ids: []
+    summary:
+      text: 独立 Verifier 判定 A1-A6 在当前内存服务层基础模块范围内全部通过。密码使用 scrypt
+        哈希，令牌仅保存摘要；重置令牌限时且一次性，未知邮箱不泄露，退出会话失效，用户身份通过 userId 隔离。上述
+        HTTP、持久化和安全运营能力保留为后续工作。
+      truncated: false
+    completed_at: 2026-08-25T03:24:03.838Z
+history_overflow:
+  dropped_entries: 0
+  first_dropped_at: null
+  last_dropped_at: null
+  outcome_counts:
+    pass: 0
+    fail: 0
+    blocked: 0
+    execution-error: 0
+    recovery: 0
+verification_result: pass
+verification_report: verification.md
+archived: false
+created_at: 2026-08-25T03:12:34.922Z
