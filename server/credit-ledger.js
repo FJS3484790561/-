@@ -21,6 +21,10 @@ export class MemoryCreditStore {
     this.operations = new Map()
     this.initializedUsers = new Set()
   }
+
+  transaction(work) {
+    return work()
+  }
 }
 
 export class CreditLedgerService {
@@ -38,10 +42,12 @@ export class CreditLedgerService {
   }
 
   initializeUserForId({ userId }) {
-    if (this.store.initializedUsers.has(userId)) return { ok: true, created: false }
-    this.store.initializedUsers.add(userId)
-    this.#grantForUser({ userId, amount: INITIAL_FREE_CREDITS, source: 'free_signup' })
-    return { ok: true, created: true }
+    return this.store.transaction(() => {
+      if (this.store.initializedUsers.has(userId)) return { ok: true, created: false }
+      this.store.initializedUsers.add(userId)
+      this.#grantForUser({ userId, amount: INITIAL_FREE_CREDITS, source: 'free_signup' })
+      return { ok: true, created: true }
+    })
   }
 
   grant({ sessionToken, amount, source = 'grant', expiresAt }) {
@@ -78,33 +84,34 @@ export class CreditLedgerService {
 
   reserveForUser({ userId, operationId, amount = 1 }) {
     if (!operationId || !positiveInteger(amount)) return { ok: false, code: 'INVALID_RESERVATION' }
-    this.initializeUserForId({ userId })
-    const operationKey = `${userId}:${operationId}`
-    const existing = this.store.operations.get(operationKey)
-    if (existing) return { ok: true, reservation: this.#publicReservation(existing) }
-    const now = this.clock()
-    const allocations = []
-    let remaining = amount
-    for (const lot of this.#lotsForUser(userId).sort((left, right) => left.expiresAt - right.expiresAt || left.createdAt - right.createdAt || left.id.localeCompare(right.id))) {
-      const available = this.#available(lot, now)
-      if (available <= 0) continue
-      const quantity = Math.min(available, remaining)
-      lot.reserved += quantity
-      allocations.push({ lotId: lot.id, quantity })
-      remaining -= quantity
-      if (remaining === 0) break
-    }
-    if (remaining > 0) {
-      for (const allocation of allocations) {
-        const lot = this.#findLot(allocation.lotId)
-        lot.reserved -= allocation.quantity
+    return this.store.transaction(() => {
+      this.initializeUserForId({ userId })
+      const operationKey = `${userId}:${operationId}`
+      const existing = this.store.operations.get(operationKey)
+      if (existing) return { ok: true, reservation: this.#publicReservation(existing) }
+      const now = this.clock()
+      const lots = this.#lotsForUser(userId)
+      const allocations = []
+      let remaining = amount
+      for (const lot of lots.sort((left, right) => left.expiresAt - right.expiresAt || left.createdAt - right.createdAt || left.id.localeCompare(right.id))) {
+        const available = this.#available(lot, now)
+        if (available <= 0) continue
+        const quantity = Math.min(available, remaining)
+        lot.reserved += quantity
+        allocations.push({ lotId: lot.id, quantity })
+        remaining -= quantity
+        if (remaining === 0) break
       }
-      return { ok: false, code: 'INSUFFICIENT_CREDITS' }
-    }
-    const reservation = { id: `reservation_${randomUUID()}`, userId, operationId, amount, allocations, status: 'reserved', createdAt: now }
-    this.store.reservations.set(reservation.id, reservation)
-    this.store.operations.set(operationKey, reservation)
-    return { ok: true, reservation: this.#publicReservation(reservation) }
+      if (remaining > 0) {
+        for (const allocation of allocations) lots.find((lot) => lot.id === allocation.lotId).reserved -= allocation.quantity
+        return { ok: false, code: 'INSUFFICIENT_CREDITS' }
+      }
+      this.store.lots.set(userId, lots)
+      const reservation = { id: `reservation_${randomUUID()}`, userId, operationId, amount, allocations, status: 'reserved', createdAt: now }
+      this.store.reservations.set(reservation.id, reservation)
+      this.store.operations.set(operationKey, reservation)
+      return { ok: true, reservation: this.#publicReservation(reservation) }
+    })
   }
 
   settle({ sessionToken, reservationId }) {
@@ -114,18 +121,25 @@ export class CreditLedgerService {
   }
 
   settleForUser({ userId, reservationId }) {
-    const reservation = this.store.reservations.get(reservationId)
-    if (!reservation || reservation.userId !== userId) return { ok: false, code: 'RESERVATION_NOT_FOUND' }
-    if (reservation.status === 'settled') return { ok: true, reservation: this.#publicReservation(reservation) }
-    if (reservation.status === 'released') return { ok: false, code: 'RESERVATION_RELEASED' }
-    for (const allocation of reservation.allocations) {
-      const lot = this.#findLot(allocation.lotId)
-      lot.reserved -= allocation.quantity
-      lot.consumed += allocation.quantity
-    }
-    reservation.status = 'settled'
-    reservation.settledAt = this.clock()
-    return { ok: true, reservation: this.#publicReservation(reservation) }
+    return this.store.transaction(() => {
+      const reservation = this.store.reservations.get(reservationId)
+      if (!reservation || reservation.userId !== userId) return { ok: false, code: 'RESERVATION_NOT_FOUND' }
+      if (reservation.status === 'settled') return { ok: true, reservation: this.#publicReservation(reservation) }
+      if (reservation.status === 'released') return { ok: false, code: 'RESERVATION_RELEASED' }
+      const lots = this.#lotsForUser(userId)
+      for (const allocation of reservation.allocations) {
+        const lot = lots.find((candidate) => candidate.id === allocation.lotId)
+        if (!lot) throw new Error('credit lot not found')
+        lot.reserved -= allocation.quantity
+        lot.consumed += allocation.quantity
+      }
+      reservation.status = 'settled'
+      reservation.settledAt = this.clock()
+      this.store.lots.set(userId, lots)
+      this.store.reservations.set(reservationId, reservation)
+      this.store.operations.set(`${userId}:${reservation.operationId}`, reservation)
+      return { ok: true, reservation: this.#publicReservation(reservation) }
+    })
   }
 
   release({ sessionToken, reservationId }) {
@@ -135,14 +149,24 @@ export class CreditLedgerService {
   }
 
   releaseForUser({ userId, reservationId }) {
-    const reservation = this.store.reservations.get(reservationId)
-    if (!reservation || reservation.userId !== userId) return { ok: false, code: 'RESERVATION_NOT_FOUND' }
-    if (reservation.status === 'released') return { ok: true, reservation: this.#publicReservation(reservation) }
-    if (reservation.status === 'settled') return { ok: false, code: 'RESERVATION_SETTLED' }
-    for (const allocation of reservation.allocations) this.#findLot(allocation.lotId).reserved -= allocation.quantity
-    reservation.status = 'released'
-    reservation.releasedAt = this.clock()
-    return { ok: true, reservation: this.#publicReservation(reservation) }
+    return this.store.transaction(() => {
+      const reservation = this.store.reservations.get(reservationId)
+      if (!reservation || reservation.userId !== userId) return { ok: false, code: 'RESERVATION_NOT_FOUND' }
+      if (reservation.status === 'released') return { ok: true, reservation: this.#publicReservation(reservation) }
+      if (reservation.status === 'settled') return { ok: false, code: 'RESERVATION_SETTLED' }
+      const lots = this.#lotsForUser(userId)
+      for (const allocation of reservation.allocations) {
+        const lot = lots.find((candidate) => candidate.id === allocation.lotId)
+        if (!lot) throw new Error('credit lot not found')
+        lot.reserved -= allocation.quantity
+      }
+      reservation.status = 'released'
+      reservation.releasedAt = this.clock()
+      this.store.lots.set(userId, lots)
+      this.store.reservations.set(reservationId, reservation)
+      this.store.operations.set(`${userId}:${reservation.operationId}`, reservation)
+      return { ok: true, reservation: this.#publicReservation(reservation) }
+    })
   }
 
   #user(sessionToken) {
@@ -159,14 +183,6 @@ export class CreditLedgerService {
 
   #lotsForUser(userId) {
     return this.store.lots.get(userId) ?? []
-  }
-
-  #findLot(lotId) {
-    for (const lots of this.store.lots.values()) {
-      const lot = lots.find((candidate) => candidate.id === lotId)
-      if (lot) return lot
-    }
-    throw new Error('credit lot not found')
   }
 
   #available(lot, now) {

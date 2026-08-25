@@ -72,7 +72,7 @@ function decodeImage(image) {
 }
 
 export class AppApi {
-  constructor({ authService, generationService, creditLedger, paymentService, worksService, adminProviderService, maxJsonBytes = DEFAULT_MAX_JSON_BYTES, secureCookies = false } = {}) {
+  constructor({ authService, generationService, creditLedger, paymentService, worksService, adminProviderService, objectStorage = null, maxJsonBytes = DEFAULT_MAX_JSON_BYTES, secureCookies = false } = {}) {
     if (!authService || !generationService || !creditLedger || !paymentService || !worksService || !adminProviderService) throw new Error('all application services are required')
     this.authService = authService
     this.generationService = generationService
@@ -80,6 +80,7 @@ export class AppApi {
     this.paymentService = paymentService
     this.worksService = worksService
     this.adminProviderService = adminProviderService
+    this.objectStorage = objectStorage
     this.maxJsonBytes = maxJsonBytes
     this.secureCookies = secureCookies
   }
@@ -125,6 +126,16 @@ export class AppApi {
     if (method === 'POST' && pathname === '/api/generations') return withJsonBody(async (body) => safeResult(await this.generationService.createGeneration({ sessionToken, image: decodeImage(body.image), params: body.params }), 202))
     const generationMatch = pathname.match(/^\/api\/generations\/([^/]+)$/u)
     if (method === 'GET' && generationMatch) return safeResult(this.generationService.getGeneration({ sessionToken, taskId: decodeURIComponent(generationMatch[1]) }))
+    const objectMatch = pathname.match(/^\/api\/objects\/([^/]+)$/u)
+    if (method === 'GET' && objectMatch && this.objectStorage) {
+      const user = this.authService.getSession(sessionToken)
+      if (!user) return json({ ok: false, code: 'UNAUTHORIZED' }, 401)
+      const key = decodeURIComponent(objectMatch[1])
+      const metadata = this.objectStorage.metadataFor(key)
+      if (!metadata || metadata.ownerId !== user.id) return json({ ok: false, code: 'NOT_FOUND' }, 404)
+      const object = await this.objectStorage.get({ key })
+      return new Response(object.body, { status: 200, headers: { 'content-type': metadata.mimeType, 'content-length': String(metadata.sizeBytes), 'cache-control': 'private, max-age=3600', 'x-content-type-options': 'nosniff' } })
+    }
 
     if (method === 'GET' && pathname === '/api/credits') return safeResult(this.creditLedger.getBalance({ sessionToken }))
     if (method === 'POST' && pathname === '/api/orders') return withJsonBody((body) => safeResult(this.paymentService.createOrder({ sessionToken, amountYuan: body.amountYuan }), 201))

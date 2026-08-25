@@ -1,0 +1,73 @@
+schema: comet.native.v4
+name: production-persistence-foundation
+language: zh-CN
+phase: build
+status: active
+state_version: 2
+brief: brief.md
+spec_changes: []
+workspace:
+  isolation: worktree
+  change_branch: comet/production-persistence-foundation
+  target_branch: comet/production-paid-mvp-launch
+  finish: null
+loop:
+  stage: building
+  goal_cycle: 1
+  iteration: 1
+  attempt: 0
+  retry_epoch: 0
+  failed_iteration_count: 0
+  no_progress_count: 0
+  execution_failure_count: 0
+  previous_unresolved_ids: []
+  next_action: submit-builder-candidate
+acceptance:
+  - id: A1
+    source: brief.md
+    text: "A1: 创建账户、会话、Provider 配置、额度、订单和作品后重启应用，数据仍可读取且关联关系保持一致。"
+    result: pending
+    reason: null
+  - id: A2
+    source: brief.md
+    text: "A2: 额度增加、成功生成扣减和支付到账使用事务及唯一约束，失败或重复操作不会造成部分写入、负余额或重复到账。"
+    result: pending
+    reason: null
+  - id: A3
+    source: brief.md
+    text: "A3: 图片内容通过对象存储接口写入和读取，数据库只保存对象键、类型、大小和归属等元数据；本地测试不需要生产凭据。"
+    result: pending
+    reason: null
+  - id: A4
+    source: brief.md
+    text: "A4: 数据库迁移可从空库重复执行到最新版本；备份可恢复到隔离位置，完整性检查能核对关键表、外键和额度流水一致性。"
+    result: pending
+    reason: null
+  - id: A5
+    source: brief.md
+    text: "A5: 未配置生产数据库或对象存储时采用明确的非生产配置；生产模式缺少必要配置必须拒绝启动，不得静默退回内存存储。"
+    result: pending
+    reason: null
+  - id: A6
+    source: brief.md
+    text: "A6: 现有自动化测试保持通过，并新增重启持久化、事务回滚、并发幂等、迁移、对象存储和备份恢复测试。"
+    result: pending
+    reason: null
+builder_handoff: null
+blockers: []
+verification: null
+history: []
+history_overflow:
+  dropped_entries: 0
+  first_dropped_at: null
+  last_dropped_at: null
+  outcome_counts:
+    pass: 0
+    fail: 0
+    blocked: 0
+    execution-error: 0
+    recovery: 0
+verification_result: pending
+verification_report: null
+archived: false
+created_at: 2026-08-25T17:53:48.987Z

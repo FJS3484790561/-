@@ -15,6 +15,10 @@ export class MemoryPaymentStore {
     this.orders = new Map()
     this.events = new Map()
   }
+
+  transaction(work) {
+    return work()
+  }
 }
 
 export class PaymentService {
@@ -41,10 +45,12 @@ export class PaymentService {
       order.providerPaymentId = String(payment.providerPaymentId)
       order.checkoutUrl = payment.checkoutUrl ? String(payment.checkoutUrl) : null
       order.updatedAt = this.clock()
+      this.store.orders.set(order.id, order)
       return { ok: true, order: this.#publicOrder(order) }
     } catch {
       order.status = 'failed'
       order.updatedAt = this.clock()
+      this.store.orders.set(order.id, order)
       return { ok: false, code: 'PAYMENT_PROVIDER_UNAVAILABLE' }
     }
   }
@@ -64,27 +70,31 @@ export class PaymentService {
     } catch {
       return { ok: false, code: 'INVALID_PAYMENT_EVENT' }
     }
-    const knownEvent = this.store.events.get(eventId)
-    if (knownEvent) return { ...knownEvent, duplicate: true }
-    const order = this.store.orders.get(orderId)
-    if (!order || order.providerPaymentId !== providerPaymentId || order.userId !== userId || order.amountFen !== amountFen || order.currency !== currency) return { ok: false, code: 'INVALID_PAYMENT_EVENT' }
-    if (order.status === 'paid') return { ok: true, status: 'paid', duplicate: true }
-    if (order.status !== 'pending') return { ok: false, code: 'ORDER_NOT_PAYABLE' }
-    if (status === 'failed' || status === 'canceled') {
-      order.status = status
-      order.updatedAt = this.clock()
-      const result = { ok: true, status }
+    return this.store.transaction(() => {
+      const knownEvent = this.store.events.get(eventId)
+      if (knownEvent) return { ...knownEvent, duplicate: true }
+      const order = this.store.orders.get(orderId)
+      if (!order || order.providerPaymentId !== providerPaymentId || order.userId !== userId || order.amountFen !== amountFen || order.currency !== currency) return { ok: false, code: 'INVALID_PAYMENT_EVENT' }
+      if (order.status === 'paid') return { ok: true, status: 'paid', duplicate: true }
+      if (order.status !== 'pending') return { ok: false, code: 'ORDER_NOT_PAYABLE' }
+      if (status === 'failed' || status === 'canceled') {
+        order.status = status
+        order.updatedAt = this.clock()
+        this.store.orders.set(order.id, order)
+        const result = { ok: true, status }
+        this.store.events.set(eventId, result)
+        return result
+      }
+      const grant = this.creditLedger.grantForUser({ userId: order.userId, amount: order.credits, source: `payment:${order.id}`, createdAt: this.clock() })
+      if (!grant.ok) return { ok: false, code: 'CREDIT_GRANT_FAILED' }
+      order.status = 'paid'
+      order.paidAt = this.clock()
+      order.updatedAt = order.paidAt
+      this.store.orders.set(order.id, order)
+      const result = { ok: true, status: 'paid', credits: order.credits }
       this.store.events.set(eventId, result)
       return result
-    }
-    const grant = this.creditLedger.grantForUser({ userId: order.userId, amount: order.credits, source: `payment:${order.id}`, createdAt: this.clock() })
-    if (!grant.ok) return { ok: false, code: 'CREDIT_GRANT_FAILED' }
-    order.status = 'paid'
-    order.paidAt = this.clock()
-    order.updatedAt = order.paidAt
-    const result = { ok: true, status: 'paid', credits: order.credits }
-    this.store.events.set(eventId, result)
-    return result
+    })
   }
 
   #publicOrder(order) {

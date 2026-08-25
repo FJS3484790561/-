@@ -4,6 +4,10 @@ export class MemoryWorksStore {
   constructor() {
     this.works = new Map()
   }
+
+  transaction(work) {
+    return work()
+  }
 }
 
 export class WorksService {

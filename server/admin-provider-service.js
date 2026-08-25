@@ -45,6 +45,10 @@ export class MemoryAdminProviderStore {
     this.configs = new Map()
     this.audit = []
   }
+
+  transaction(work) {
+    return work()
+  }
 }
 
 export class AdminProviderService {
@@ -105,6 +109,7 @@ export class AdminProviderService {
     config.model = nextModel
     if (apiKey !== undefined) config.encryptedApiKey = encryptSecret(apiKey, this.encryptionKey)
     config.updatedAt = this.clock()
+    this.store.configs.set(providerId, config)
     this.#record(access.user.id, config, 'updated')
     return { ok: true, provider: publicConfig(config) }
   }
@@ -117,6 +122,7 @@ export class AdminProviderService {
     if (typeof enabled !== 'boolean') return { ok: false, code: 'VALIDATION_ERROR', fields: { enabled: 'enabled must be boolean' } }
     config.enabled = enabled
     config.updatedAt = this.clock()
+    this.store.configs.set(providerId, config)
     this.#record(access.user.id, config, enabled ? 'enabled' : 'disabled')
     return { ok: true, provider: publicConfig(config) }
   }
