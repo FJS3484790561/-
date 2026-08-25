@@ -1,0 +1,35 @@
+schema: comet.native.children.v1
+children:
+  - name: app-http-api-integration
+    depends_on: []
+    covers:
+      - A1
+      - A5
+  - name: user-web-surfaces
+    depends_on:
+      - app-http-api-integration
+    covers:
+      - A1
+      - A3
+      - A4
+      - A5
+  - name: admin-web-surface
+    depends_on:
+      - app-http-api-integration
+    covers:
+      - A3
+      - A4
+      - A5
+  - name: cross-surface-qa-rerun
+    depends_on:
+      - user-web-surfaces
+      - admin-web-surface
+    covers:
+      - A1
+      - A2
+      - A3
+      - A4
+      - A5
+      - A6
+      - A7
+      - A8

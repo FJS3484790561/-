@@ -1,0 +1,26 @@
+{
+  "kind": "verifier-response",
+  "response": {
+    "kind": "final-result",
+    "result": {
+      "iteration": 2,
+      "attempt": 1,
+      "verdict": "pass",
+      "acceptance": [
+        { "id": "A1", "result": "passed", "reason": "真实临时 HTTP Server 验证通过：GET /api/health 返回 200 ready；无请求体和 Content-Type 的 POST /api/missing 返回 404 及 JSON NOT_FOUND。" },
+        { "id": "A2", "result": "passed", "reason": "注册、登录、会话、退出和密码找回路由均连接 AuthService；未认证会话返回 401。生产模式登录 Cookie 实测包含 HttpOnly、SameSite=Lax、Secure，登录响应不含 sessionToken，密码重置响应不回显重置令牌。" },
+        { "id": "A3", "result": "passed", "reason": "真实 HTTP 请求成功创建和查询生成任务；10 MiB PNG 进入 GenerationService 并返回 202。请求体伪造 sessionToken 无法覆盖 Cookie 身份，其他用户读取任务返回 404。" },
+        { "id": "A4", "result": "passed", "reason": "额度、订单和作品路由连接现有服务。请求体 sessionToken 无法覆盖 Cookie 身份，其他用户读取作品和订单均返回 404。" },
+        { "id": "A5", "result": "passed", "reason": "公开注册大小写变体 ADMIN@example.com 实测返回 409，未创建用户且不能登录；内部 provisionAdmin 后管理员可登录并创建 Provider。未登录和普通用户分别返回 401、403；请求体 sessionToken 和 providerId 无法覆盖 Cookie 或路径身份；Provider及审计响应均不含密钥明文。" },
+        { "id": "A6", "result": "passed", "reason": "application/json-evil 实测返回 415且未创建用户；未知路由不受请求体校验干扰。默认上限为16777216字节，完整10 MiB图片的Base64 JSON实测为13981249字节并成功返回202。响应未暴露会话令牌、密码、Provider密钥、支付签名或内部异常。" },
+        { "id": "A7", "result": "passed", "reason": "独立复跑 npm test，33/33通过；新增测试覆盖未知POST路由、管理员邮箱抢注、无效JSON媒体类型和请求大小边界。Runtime提供的npm run lint、npm run build、npm run typecheck结果均通过；验收要求覆盖的Cookie、隔离、身份覆盖和脱敏边界已额外通过真实HTTP探测。" }
+      ],
+      "risks": [
+        "当前认证、额度、订单、作品和Provider配置仍使用内存Store，进程重启会丢失数据，不具备生产持久化能力。",
+        "真实支付、图像Provider、生产CSRF防护、速率限制、HTTPS及安全响应头仍属于后续生产化范围。",
+        "当前16 MiB JSON上限足以承载10 MiB图片的Base64与现有JSON开销，但生产上传仍应迁移到对象存储或multipart。"
+      ],
+      "summary": "iteration 2 验证通过。上一轮未知POST路由、管理员邮箱抢注提权、Content-Type前缀绕过和JSON容量不足问题均已修复并真实复现验证；A1-A7全部通过。"
+    }
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "kind": "builder-handoff",
+  "summary": "为隐藏的房间照片文件输入补充准确的可访问名称，并将浏览器 QA 改为通过该名称定位上传控件，修复 A6 且防止回归。",
+  "addressed_acceptance_ids": ["A6"],
+  "checks": [
+    {
+      "name": "npm test",
+      "result": "passed",
+      "note": "35/35 通过。"
+    },
+    {
+      "name": "npm run lint",
+      "result": "passed",
+      "note": "ESLint 无错误。"
+    },
+    {
+      "name": "npm run build",
+      "result": "passed",
+      "note": "Vite 构建通过。"
+    },
+    {
+      "name": "npm run typecheck",
+      "result": "passed",
+      "note": "JavaScript 项目，命令通过；Vite build 承担语法与模块检查。"
+    },
+    {
+      "name": "npm run qa:browser",
+      "result": "passed",
+      "note": "桌面、390px、320px 流程通过；上传控件由 getByLabel('上传房间照片') 定位，无溢出或意外控制台错误。"
+    }
+  ],
+  "known_limits": [
+    "认证、生成、作品、额度与订单仍使用内存 Store，进程重启会丢失数据。",
+    "本地图像 Provider 返回输入图像副本，仅用于集成验证，不代表真实 AI 生成。",
+    "密码找回邮件不实际发送；本地订单只保持待支付，不发起真实支付或增加额度。",
+    "生产对象存储、邮件、支付、Provider、服务器、域名与部署不在本 Change 范围。"
+  ]
+}

@@ -39,16 +39,29 @@ export class MemoryAuthStore {
 }
 
 export class AuthService {
-  constructor({ store = new MemoryAuthStore(), mailer = { sendPasswordReset: async () => {} }, clock } = {}) {
+  constructor({ store = new MemoryAuthStore(), mailer = { sendPasswordReset: async () => {} }, clock, reservedRegistrationEmails = [] } = {}) {
     this.store = store
     this.mailer = mailer
     this.clock = clock ?? (() => Date.now())
+    this.reservedRegistrationEmails = new Set(reservedRegistrationEmails.map(normalizeEmail))
   }
 
   async register({ email, password }) {
     const normalizedEmail = normalizeEmail(email)
     if (!EMAIL_PATTERN.test(normalizedEmail)) return { ok: false, code: 'INVALID_EMAIL' }
     if (!validPassword(password)) return { ok: false, code: 'INVALID_PASSWORD' }
+    if (this.reservedRegistrationEmails.has(normalizedEmail)) return { ok: false, code: 'EMAIL_ALREADY_REGISTERED' }
+    return this.#createUser(normalizedEmail, password)
+  }
+
+  async provisionUser({ email, password }) {
+    const normalizedEmail = normalizeEmail(email)
+    if (!EMAIL_PATTERN.test(normalizedEmail)) return { ok: false, code: 'INVALID_EMAIL' }
+    if (!validPassword(password)) return { ok: false, code: 'INVALID_PASSWORD' }
+    return this.#createUser(normalizedEmail, password)
+  }
+
+  async #createUser(normalizedEmail, password) {
     if (this.store.users.has(normalizedEmail)) return { ok: false, code: 'EMAIL_ALREADY_REGISTERED' }
     const user = { id: `user_${randomBytes(10).toString('hex')}`, email: normalizedEmail, passwordHash: await hashPassword(password), createdAt: this.clock() }
     this.store.users.set(normalizedEmail, user)

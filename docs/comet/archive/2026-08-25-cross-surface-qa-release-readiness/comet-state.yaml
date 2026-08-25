@@ -1,0 +1,285 @@
+schema: comet.native.v4
+name: cross-surface-qa-release-readiness
+language: zh-CN
+phase: archive
+status: done
+state_version: 15
+brief: brief.md
+children_contract_hash: 2d5187fd848cfe82e3a336d73cef503e4fe881fafbf81c87418c68e8e5d74385
+spec_changes: []
+workspace:
+  isolation: branch
+  change_branch: comet/cross-surface-qa-release-readiness
+  target_branch: master
+  finish: merge
+loop:
+  stage: done
+  goal_cycle: 2
+  iteration: 1
+  attempt: 2
+  retry_epoch: 0
+  failed_iteration_count: 0
+  no_progress_count: 0
+  execution_failure_count: 0
+  previous_unresolved_ids: []
+  next_action: null
+acceptance:
+  - id: A1
+    source: brief.md
+    text: "A1: 核心用户流程可从认证进入工作台，完成参数选择、生成模拟、前后对比，并访问作品和额度入口；不存在阻断性页面错误。"
+    result: passed
+    reason:
+      text: 用户端 Playwright 在桌面 1440x1000、移动端 390x844 和最小移动端 320x800
+        完成找回密码入口、注册、进入工作台、上传图片、通过 HTTP API
+        生成模拟、前后对比、保存作品、作品详情、额度订单、账户帮助和退出登录；三个视口均无意外控制台错误或阻断性页面错误。
+      truncated: false
+  - id: A2
+    source: brief.md
+    text: "A2: 生成结果的前后对比控件可通过指针和键盘操作，左右两侧标签清晰且不会互相遮挡。"
+    result: passed
+    reason:
+      text: 实际实现使用覆盖对比区域的原生 range 控件，并提供“调整原图和效果图的分界位置”标签；browser-qa 与 browser-qa-long
+        均在三个视口通过 ArrowRight 验证键盘移动，同时确认“生成之前”和“生成之后”标签不重叠。
+      truncated: false
+  - id: A3
+    source: brief.md
+    text: "A3: 关键页面在桌面和移动视口下无横向溢出、文字裁切或主要控件重叠。"
+    result: passed
+    reason:
+      text: 用户端在 1440x1000、390x844、320x800，管理员端在 1366x900、390x844、320x800
+        均完成关键流程；Runtime 浏览器记录显示各视口无横向溢出、对比标签不重叠、主要控件可操作，未发现阻断性文字裁切或控件重叠。
+      truncated: false
+  - id: A4
+    source: brief.md
+    text: "A4: 交互控件具有可见焦点，关键表单与按钮具备可理解的名称，页面不存在自动化可访问性检查发现的严重问题。"
+    result: passed
+    reason:
+      text: 关键表单、按钮和滑杆均可通过语义角色或标签定位；全局样式为 button、input、select、链接等交互控件提供 focus-visible
+        轮廓，管理员端三个视口实测焦点可见，对比滑杆键盘操作通过，现有基础自动化可访问性检查未发现严重问题。
+      truncated: false
+  - id: A5
+    source: brief.md
+    text: "A5: 未登录、普通用户和管理员边界符合现有服务约束；错误信息、公开响应和前端构建产物不包含测试密钥或敏感配置明文。"
+    result: passed
+    reason:
+      text: 37项测试确认匿名管理员请求返回401、普通用户返回403、用户任务/作品/订单按所有者隔离，会话使用 HttpOnly、SameSite=Lax
+        Cookie，服务异常仅返回安全错误码；Provider
+        密钥加密保存且在响应、页面和审计记录中遮蔽。对源码及前端构建产物的常见生产密钥和私钥模式扫描未发现匹配。
+      truncated: false
+  - id: A6
+    source: brief.md
+    text: "A6: 自动化测试、lint、build 和 typecheck/语法检查全部通过，失败项必须记录原因而不能静默忽略。"
+    result: passed
+    reason:
+      text: Runtime stateVersion 11 的六项检查均为 passed：browser-qa 退出码0、耗时24133ms；npm test
+        37/37通过；lint通过；build通过；typecheck脚本通过并明确声明JavaScript项目由Vite构建承担语法和模块检查；browser-qa-long退出码0、耗时19281ms。补充长时限检查已消除上一
+        attempt 的超时歧义。
+      truncated: false
+  - id: A7
+    source: brief.md
+    text: "A7: 上线准备报告明确区分已就绪能力和未完成的生产数据库、服务器、域名、真实支付、真实 Provider、邮件服务及密钥管理工作。"
+    result: passed
+    reason:
+      text: "READINESS_REPORT 明确标记 READINESS_STATUS: NOT_READY_FOR_RELEASE 和
+        RELEASE_APPROVED:
+        NO，并分别列明本地已验证能力及尚未完成的生产数据库、真实支付、图像Provider、邮件服务、密钥管理、服务器、域名、HTTPS、监控和回滚\
+        工作。"
+      truncated: false
+  - id: A8
+    source: brief.md
+    text: "A8: 本 Change 不执行部署、远程推送、域名配置、真实支付交易或生产凭据写入。"
+    result: passed
+    reason:
+      text: 候选差异只包含本地用户端、管理员端、HTTP API、测试和准备度文档；仓库未配置 Git
+        remote，未发现部署或域名基础设施配置，也没有生产凭据写入证据。本 Change 未执行远程推送、部署、域名配置或真实支付交易。
+      truncated: false
+builder_handoff:
+  candidate_id: 7d72393d-51b9-4d92-a04d-5fcc3df0401e
+  identity_provider: skill-coordinated
+  builder_execution_ref: native-parent-integration:39917d43-7eb7-41bb-bde0-b393d28e1c67
+  iteration: 1
+  summary:
+    text: 四个子 Change 已全部完成验证、合并到 Supervisor 分支并归档；最终跨页面 QA 覆盖
+      A1-A8，自动化测试、lint、build、typecheck
+      与桌面/移动浏览器检查均通过。当前仍明确不具备生产发布条件，未执行部署、推送、域名、真实支付、Provider、邮件、生产数据库或凭据配置。
+    truncated: false
+  addressed_acceptance_ids:
+    - A1
+    - A2
+    - A3
+    - A4
+    - A5
+    - A6
+    - A7
+    - A8
+  checks: []
+  checks_truncated: false
+  known_limits: []
+  known_limits_truncated: false
+  submitted_at: 2026-08-25T16:18:48.646Z
+blockers: []
+verification:
+  candidate_id: 7d72393d-51b9-4d92-a04d-5fcc3df0401e
+  identity_provider: skill-coordinated
+  verifier_execution_ref: skill-coordinated:verifier:1c7be324-4170-49d2-b28c-285087273baa
+  iteration: 1
+  attempt: 2
+  assurance: skill-coordinated
+  verdict: pass
+  checks:
+    - id: browser-qa
+      name:
+        text: browser-qa
+        truncated: false
+      argv_display:
+        - text: run
+          truncated: false
+        - text: qa:browser
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 24133
+    - id: test
+      name:
+        text: npm test
+        truncated: false
+      argv_display:
+        - text: test
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 5259
+    - id: lint
+      name:
+        text: npm run lint
+        truncated: false
+      argv_display:
+        - text: run
+          truncated: false
+        - text: lint
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 13389
+    - id: build
+      name:
+        text: npm run build
+        truncated: false
+      argv_display:
+        - text: run
+          truncated: false
+        - text: build
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 2827
+    - id: typecheck
+      name:
+        text: npm run typecheck
+        truncated: false
+      argv_display:
+        - text: run
+          truncated: false
+        - text: typecheck
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 1231
+    - id: browser-qa-long
+      name:
+        text: npm run qa:browser (extended timeout)
+        truncated: false
+      argv_display:
+        - text: run
+          truncated: false
+        - text: qa:browser
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 19281
+  summary:
+    text: 独立只读核验确认候选7d72393d-51b9-4d92-a04d-5fcc3df0401e的A1-A8全部通过。正式验收项、实际用户端与管理员端实现、HTTP权限边界、Runtime六项检查记录及上线准备报告相互一致。该结论仅表示本地付费MVP的跨页面QA和发布边界验证通过，不表示生产发布就绪，也不构成发布批准。
+    truncated: false
+  risks:
+    - text: typecheck脚本对JavaScript项目只报告N/A，语法和模块完整性主要由ESLint与Vite
+        build保证，不等同于完整静态类型分析。
+      truncated: false
+    - text: 可访问性证据覆盖语义名称、键盘滑杆和焦点轮廓等基础项，但未使用axe等完整规则集，不能视为全面WCAG审计。
+      truncated: false
+    - text: 敏感信息检查属于启发式模式扫描；测试源码包含明确标注的本地占位密码和Provider测试值，但未进入前端构建产物或作为生产凭据使用。
+      truncated: false
+    - text: 当前数据、支付、邮件和图像生成仍使用内存状态或本地模拟边界；本次通过仅代表本地付费MVP跨页面QA通过，不能据此正式收费上线。
+      truncated: false
+    - text: 当前Node.js 22.12.0低于部分开发工具声明的22.13.0最低版本；本轮检查虽全部通过，后续构建环境仍应固定到受支持版本。
+      truncated: false
+  risks_truncated: false
+  completed_at: 2026-08-25T16:56:06.250Z
+history:
+  - goal_cycle: 1
+    iteration: 1
+    attempt: 1
+    outcome: fail
+    unresolved_ids:
+      - A1
+      - A3
+      - A4
+      - A5
+    summary:
+      text: 验收失败。A2、A6、A7、A8 通过；A1、A3、A4、A5 因关键浏览器 Surface、HTTP
+        集成及完整跨页面权限/响应式/可访问性证据缺失而失败。上线准备报告的诚实披露满足 A7，但不能使被披露为缺失的功能通过其他验收项。
+      truncated: false
+    completed_at: 2026-08-25T05:40:58.758Z
+  - goal_cycle: 1
+    iteration: 2
+    attempt: 0
+    outcome: recovery
+    unresolved_ids: []
+    summary:
+      text: Native child declarations changed
+      truncated: false
+    completed_at: 2026-08-25T05:44:16.205Z
+  - goal_cycle: 2
+    iteration: 1
+    attempt: 1
+    outcome: execution-error
+    unresolved_ids: []
+    summary:
+      text: "Native Verifier response was invalid: Native verification cannot pass
+        before every required check succeeds"
+      truncated: false
+    completed_at: 2026-08-25T16:41:42.201Z
+  - goal_cycle: 2
+    iteration: 1
+    attempt: 2
+    outcome: pass
+    unresolved_ids: []
+    summary:
+      text: 独立只读核验确认候选7d72393d-51b9-4d92-a04d-5fcc3df0401e的A1-A8全部通过。正式验收项、实际用户端与管理员端实现、HTTP权限边界、Runtime六项检查记录及上线准备报告相互一致。该结论仅表示本地付费MVP的跨页面QA和发布边界验证通过，不表示生产发布就绪，也不构成发布批准。
+      truncated: false
+    completed_at: 2026-08-25T16:56:06.250Z
+history_overflow:
+  dropped_entries: 0
+  first_dropped_at: null
+  last_dropped_at: null
+  outcome_counts:
+    pass: 0
+    fail: 0
+    blocked: 0
+    execution-error: 0
+    recovery: 0
+verification_result: pass
+verification_report: verification.md
+archived: true
+created_at: 2026-08-25T05:22:08.212Z

@@ -6,9 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "api:start": "node server/start-api.js",
     "preview": "vite preview",
     "lint": "eslint .",
-    "typecheck": "node -e \"console.log('TYPECHECK: N/A - prototype uses JavaScript; runtime build is the current syntax check')\"",
+    "qa:browser": "node tests/user-surfaces.playwright.mjs && node tests/admin-surface.playwright.mjs",
+    "typecheck": "node -e \"console.log('TYPECHECK: N/A - frontend uses JavaScript; Vite build is the syntax and module check')\"",
     "test": "node --test"
   },
   "dependencies": {

@@ -1,0 +1,371 @@
+schema: comet.native.v4
+name: cross-surface-qa-rerun
+language: zh-CN
+phase: archive
+status: done
+state_version: 8
+brief: brief.md
+spec_changes:
+  - capability: release-readiness
+    operation: create
+    source: specs/release-readiness/spec.md
+workspace:
+  isolation: worktree
+  change_branch: comet/cross-surface-qa-rerun
+  target_branch: comet/cross-surface-qa-release-readiness
+  finish: merge
+loop:
+  stage: done
+  goal_cycle: 1
+  iteration: 1
+  attempt: 1
+  retry_epoch: 0
+  failed_iteration_count: 0
+  no_progress_count: 0
+  execution_failure_count: 0
+  previous_unresolved_ids: []
+  next_action: null
+acceptance:
+  - id: A1
+    source: brief.md
+    text: "A1: 核心用户流程可从认证进入工作台，完成参数选择、生成模拟、前后对比，并访问作品和额度入口；不存在阻断性页面错误。"
+    result: passed
+    reason:
+      text: 用户端 Playwright 在 desktop、390px、320px
+        完成找回入口、注册、进入工作台、上传、生成模拟、前后对比、保存作品、作品详情、额度订单、账户帮助及退出；三个视口均无意外控制台错误。源码确认设计参数会随生成请求提交。
+      truncated: false
+  - id: A2
+    source: brief.md
+    text: "A2: 生成结果的前后对比控件可通过指针和键盘操作，左右两侧标签清晰且不会互相遮挡。"
+    result: passed
+    reason:
+      text: 对比区使用覆盖完整画面的原生 range 控件，支持指针操作；QA 通过 ArrowRight
+        验证键盘改变分界值，并在三个视口用边界框断言标签不重叠。
+      truncated: false
+  - id: A3
+    source: brief.md
+    text: "A3: 关键页面在桌面和移动视口下无横向溢出、文字裁切或主要控件重叠。"
+    result: passed
+    reason:
+      text: 用户端 1440x1000、390x844、320x800，以及管理员端 1366x900、390x844、320x800
+        均验证无横向溢出；关键流程在各视口成功完成，未见主要控件重叠或关键文字裁切证据。
+      truncated: false
+  - id: A4
+    source: brief.md
+    text: "A4: 交互控件具有可见焦点，关键表单与按钮具备可理解的名称，页面不存在自动化可访问性检查发现的严重问题。"
+    result: passed
+    reason:
+      text: 浏览器测试通过语义角色或标签定位关键表单、按钮和滑杆；全局 CSS 提供 focus-visible
+        轮廓，管理员三个视口实测焦点可见，滑杆键盘操作通过，未记录严重可访问性错误。
+      truncated: false
+  - id: A5
+    source: brief.md
+    text: "A5: 未登录、普通用户和管理员边界符合现有服务约束；错误信息、公开响应和前端构建产物不包含测试密钥或敏感配置明文。"
+    result: passed
+    reason:
+      text: HTTP 测试确认匿名管理员请求为 401、普通用户为 403，用户资源按所有者隔离；会话使用 HttpOnly/SameSite
+        Cookie，异常仅返回安全错误码，Provider 密钥在响应和审计中脱敏。独立扫描未发现被跟踪 .env、私钥、常见生产 API key
+        或构建产物敏感匹配。
+      truncated: false
+  - id: A6
+    source: brief.md
+    text: "A6: 自动化测试、lint、build 和 typecheck/语法检查全部通过，失败项必须记录原因而不能静默忽略。"
+    result: passed
+    reason:
+      text: Runtime 记录 npm test 37/37、lint、Vite build、typecheck/语法边界检查、组合浏览器 QA
+        和生产依赖审计全部成功；qa:browser 使用 && 串联且断言失败会产生非零退出码。
+      truncated: false
+  - id: A7
+    source: brief.md
+    text: "A7: 上线准备报告明确区分已就绪能力和未完成的生产数据库、服务器、域名、真实支付、真实 Provider、邮件服务及密钥管理工作。"
+    result: passed
+    reason:
+      text: "READINESS_REPORT 标记 NOT_READY_FOR_RELEASE 和 RELEASE_APPROVED:
+        NO，分别列出已验证本地能力以及生产数据库、服务器域名、真实支付、Provider、邮件、密钥管理和安全控制缺口。"
+      truncated: false
+  - id: A8
+    source: brief.md
+    text: "A8: 本 Change 不执行部署、远程推送、域名配置、真实支付交易或生产凭据写入。"
+    result: passed
+    reason:
+      text: Change brief、Spec 和报告均限定为本地 QA；仓库没有配置 Git
+        remote，工作区未发现部署、域名配置、真实交易或生产凭据写入证据。
+      truncated: false
+  - id: A9
+    source: specs/release-readiness/spec.md
+    text: The local paid-MVP baseline provides user authentication and password
+      recovery, the design workbench, simulated generation with a
+      keyboard-operable before/after comparison, works and credit/order entry
+      points, and an administrator surface at `/admin`. Browser flows use the
+      existing HTTP API boundary and preserve server-side authentication,
+      credit, order, and administrator authorization rules.
+    result: passed
+    reason:
+      text: 源码和组合浏览器 QA 覆盖邮箱认证与找回、设计工作台、模拟生成、键盘前后对比、作品、额度订单及 /admin；前端统一调用 /api 并使用
+        Cookie，服务端执行会话、额度、订单、作品和管理员规则。
+      truncated: false
+  - id: A10
+    source: specs/release-readiness/spec.md
+    text: The user and administrator surfaces remain usable at desktop, 390px, and
+      320px widths without horizontal overflow, clipped essential text, or
+      overlapping primary controls. Interactive controls expose understandable
+      names and visible focus. The before/after control supports pointer and
+      keyboard input and keeps both comparison labels readable.
+    result: passed
+    reason:
+      text: 用户端和管理员端均在 desktop、390px、320px
+        完成浏览器流程且无横向溢出；关键控件有语义名称，焦点样式存在，对比滑杆键盘移动和标签不重叠断言全部通过。
+      truncated: false
+  - id: A11
+    source: specs/release-readiness/spec.md
+    text: Anonymous, normal-user, and administrator capabilities remain separated
+      according to the existing service contracts. Public responses,
+      user-visible errors, source files, logs, screenshots, and frontend build
+      output do not expose test secrets, merchant credentials, Provider keys, or
+      production configuration.
+    result: passed
+    reason:
+      text: 测试覆盖匿名、普通用户、管理员及跨用户资源隔离；公开响应、异常和 Provider 审计不返回令牌、密钥或内部堆栈。独立检查源码、Runtime
+        日志和 dist 未发现生产敏感模式或构建产物测试凭据匹配。
+      truncated: false
+  - id: A12
+    source: specs/release-readiness/spec.md
+    text: Automated tests, lint, build, JavaScript syntax/module checking, combined
+      browser QA, permission checks, and sensitive-data checks are recorded
+      without suppressing failures. The readiness report distinguishes locally
+      implemented and verified capabilities from outstanding production
+      database, hosting, domain, real payment, real Provider, email delivery,
+      and secret-management work.
+    result: passed
+    reason:
+      text: Runtime 保留单测、lint、build、typecheck、浏览器 QA
+        和生产依赖审计日志；浏览器日志记录布局、键盘对比、标签、权限、焦点和密钥显示结果，准备报告区分本地通过项与生产缺口。
+      truncated: false
+  - id: A13
+    source: specs/release-readiness/spec.md
+    text: This capability produces QA evidence and a readiness assessment only. It
+      does not deploy, push remotely, configure a domain, execute a real
+      payment, write production credentials, or grant release approval.
+    result: passed
+    reason:
+      text: "候选仅新增 QA 断言、Change 文档和 readiness 报告更新；报告保持 RELEASE_APPROVED: NO，Git
+        状态和历史未显示部署、远程推送、域名配置、真实支付、生产凭据或发布批准活动。"
+      truncated: false
+builder_handoff:
+  candidate_id: 0d45dc86-1519-41c2-9bb7-bf2f207e8f54
+  identity_provider: skill-coordinated
+  builder_execution_ref: skill-coordinated:builder:2c813d7e-520d-4249-a932-55f2d0272489
+  iteration: 1
+  summary:
+    text: 在最终集成分支上完成跨页面 QA 重跑；新增找回密码入口与前后对比标签不重叠的浏览器断言；更新上线准备报告，移除已解决的 Surface/HTTP
+      集成阻塞并保留生产数据库、支付、Provider、邮件、密钥及部署阻塞。
+    truncated: false
+  addressed_acceptance_ids:
+    - A1
+    - A2
+    - A3
+    - A4
+    - A5
+    - A6
+    - A7
+    - A8
+    - A9
+    - A10
+    - A11
+    - A12
+    - A13
+  checks:
+    - name:
+        text: npm test
+        truncated: false
+      result: passed
+      note:
+        text: 37/37 tests passed
+        truncated: false
+    - name:
+        text: npm run lint
+        truncated: false
+      result: passed
+      note: null
+    - name:
+        text: npm run build
+        truncated: false
+      result: passed
+      note: null
+    - name:
+        text: npm run typecheck
+        truncated: false
+      result: passed
+      note:
+        text: JavaScript project; Vite build supplies syntax and module checking
+        truncated: false
+    - name:
+        text: npm run qa:browser
+        truncated: false
+      result: passed
+      note:
+        text: User and admin flows passed at desktop, 390px, and 320px
+        truncated: false
+    - name:
+        text: production dependency audit
+        truncated: false
+      result: passed
+      note:
+        text: 0 production vulnerabilities from npm official registry
+        truncated: false
+    - name:
+        text: sensitive-data pattern scan
+        truncated: false
+      result: passed
+      note:
+        text: No tracked env files, private keys, common production API key patterns, or
+          matching build artifacts found
+        truncated: false
+  checks_truncated: false
+  known_limits:
+    - text: Production database, hosting, domain, payment, image Provider, email
+        delivery, and secret management are intentionally not configured.
+      truncated: false
+    - text: Typecheck is N/A as a dedicated static type analysis because the frontend
+        is JavaScript; build verifies syntax and imports.
+      truncated: false
+    - text: Local Node.js 22.12.0 is slightly below the 22.13.0 minimum declared by
+        current ESLint packages, although install, lint, build, and tests
+        passed.
+      truncated: false
+  known_limits_truncated: false
+  submitted_at: 2026-08-25T15:24:27.916Z
+blockers: []
+verification:
+  candidate_id: 0d45dc86-1519-41c2-9bb7-bf2f207e8f54
+  identity_provider: skill-coordinated
+  verifier_execution_ref: skill-coordinated:verifier:0918b075-ff1f-4efa-b3c6-1af0a81d5755
+  iteration: 1
+  attempt: 1
+  assurance: skill-coordinated
+  verdict: pass
+  checks:
+    - id: unit-tests
+      name:
+        text: npm test
+        truncated: false
+      argv_display:
+        - text: test
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 4443
+    - id: lint
+      name:
+        text: npm run lint
+        truncated: false
+      argv_display:
+        - text: run
+          truncated: false
+        - text: lint
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 4867
+    - id: build
+      name:
+        text: npm run build
+        truncated: false
+      argv_display:
+        - text: run
+          truncated: false
+        - text: build
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 2319
+    - id: typecheck
+      name:
+        text: npm run typecheck
+        truncated: false
+      argv_display:
+        - text: run
+          truncated: false
+        - text: typecheck
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 1469
+    - id: browser-qa
+      name:
+        text: npm run qa:browser
+        truncated: false
+      argv_display:
+        - text: run
+          truncated: false
+        - text: qa:browser
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 18338
+    - id: production-audit
+      name:
+        text: npm audit production dependencies
+        truncated: false
+      argv_display:
+        - text: audit
+          truncated: false
+        - text: --omit=dev
+          truncated: false
+        - text: --registry=https://registry.npmjs.org
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 3214
+  summary:
+    text: 候选在最终集成基线上完成用户端、管理员端和 HTTP API 的跨页面验证，A1-A13 均有实现、测试或只读检查证据支持。结论仅代表本地付费
+      MVP 的 QA 与准备度通过，项目仍未达到生产发布条件。
+    truncated: false
+  risks:
+    - text: typecheck 对 JavaScript 项目仅为 N/A 提示，语法和模块完整性主要由 Vite build 覆盖，不等同于完整静态类型分析。
+      truncated: false
+    - text: 可访问性验证覆盖语义名称、键盘滑杆和焦点轮廓等基础项，但未使用 axe 等完整规则集，不能代表全面 WCAG 审计。
+      truncated: false
+    - text: 敏感模式扫描属于启发式检查；测试源码含明确标注的本地占位密码，但不是生产凭据且未进入前端构建产物或 Runtime 日志。
+      truncated: false
+    - text: 当前 Node.js 22.12.0 低于部分开发工具声明的 22.13.0 最低版本，虽然本轮全部检查通过，后续构建环境仍应固定到受支持版本。
+      truncated: false
+  risks_truncated: false
+  completed_at: 2026-08-25T15:37:30.077Z
+history:
+  - goal_cycle: 1
+    iteration: 1
+    attempt: 1
+    outcome: pass
+    unresolved_ids: []
+    summary:
+      text: 候选在最终集成基线上完成用户端、管理员端和 HTTP API 的跨页面验证，A1-A13 均有实现、测试或只读检查证据支持。结论仅代表本地付费
+        MVP 的 QA 与准备度通过，项目仍未达到生产发布条件。
+      truncated: false
+    completed_at: 2026-08-25T15:37:30.077Z
+history_overflow:
+  dropped_entries: 0
+  first_dropped_at: null
+  last_dropped_at: null
+  outcome_counts:
+    pass: 0
+    fail: 0
+    blocked: 0
+    execution-error: 0
+    recovery: 0
+verification_result: pass
+verification_report: verification.md
+archived: true
+created_at: 2026-08-25T15:17:37.103Z

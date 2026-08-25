@@ -1,0 +1,22 @@
+{
+  "kind": "verifier-response",
+  "response": { "kind": "final-result", "result": {
+    "iteration": 1, "attempt": 1, "verdict": "fail",
+    "acceptance": [
+      { "id": "A1", "result": "passed", "reason": "独立浏览器验证公开注册后实际完成登录，HttpOnly Cookie 会话在刷新后恢复；退出清除 Cookie，原账户可重新登录。未注册邮箱的找回请求显示统一防枚举文案；重置表单及服务层一次性重置流程存在。" },
+      { "id": "A2", "result": "passed", "reason": "上传限制、空间/风格/强度/偏好参数及同源 HTTP 生成接口已接通；创建后持续轮询任务。独立验证成功状态、额度不足状态及失败释放边界。" },
+      { "id": "A3", "result": "passed", "reason": "成功结果同时显示原图、效果图及清晰标签；滑块指针和键盘操作、保存状态与下载动作通过。" },
+      { "id": "A4", "result": "passed", "reason": "独立验证作品空态、保存、列表和详情；第二用户读取第一用户作品返回 404。" },
+      { "id": "A5", "result": "passed", "reason": "1-9元、10元12次、30元45次、100元200次均创建待支付订单且余额不提前增加。" },
+      { "id": "A6", "result": "failed", "reason": "三视口无溢出且焦点/reduced-motion规则存在，但隐藏文件 input 无关联 label、aria-label 或其他可访问名称，不符合输入命名要求。" },
+      { "id": "A7", "result": "passed", "reason": "同源 /api 与 credentials=include；Cookie 为 HttpOnly/SameSite=Lax，浏览器存储为空，src/dist 无敏感字段或密钥明文。" },
+      { "id": "A8", "result": "passed", "reason": "独立复跑 35/35 测试、lint、构建/语法与三视口浏览器 QA 通过。" }
+    ],
+    "risks": [
+      "隐藏文件上传 input 缺少可访问名称，应关联 label 或 aria-label 并补自动化断言。",
+      "现有浏览器 QA 未检查表单控件可访问名称，因此未发现 A6 缺陷。",
+      "内存 Store 及本地邮件、支付、图像 Provider 不代表生产就绪。"
+    ],
+    "summary": "验证失败。A1-A5、A7-A8通过；A6因隐藏文件上传控件缺少可访问名称失败。"
+  } }
+}

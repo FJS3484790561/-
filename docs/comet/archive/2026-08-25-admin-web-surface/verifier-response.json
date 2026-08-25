@@ -1,0 +1,21 @@
+{
+  "kind": "verifier-response",
+  "response": { "kind": "final-result", "result": {
+    "iteration": 1, "attempt": 1, "verdict": "pass",
+    "acceptance": [
+      { "id": "A1", "result": "passed", "reason": "未登录管理员 API 返回401并显示登录界面；普通用户显示明确403且伪造身份不能读取或修改Provider。" },
+      { "id": "A2", "result": "passed", "reason": "公开注册管理员邮箱返回409；内部预置后管理员可完成空态、列表、创建、编辑、启停。" },
+      { "id": "A3", "result": "passed", "reason": "表单验证名称、HTTP(S)端点、模型和密钥；覆盖保存、重复冲突、服务错误、清空密钥和恢复路径。" },
+      { "id": "A4", "result": "passed", "reason": "公开配置仅展示配置状态与掩码，页面、审计、编辑表单及构建产物不显示或回填密钥。" },
+      { "id": "A5", "result": "passed", "reason": "脱敏审计可读取；请求体 sessionToken/providerId 不能覆盖 Cookie 或 URL 路径身份。" },
+      { "id": "A6", "result": "passed", "reason": "1366px、390px、320px无横向溢出、裁切或主要控件重叠；输入与按钮有名称、焦点可见，reduced-motion生效。" },
+      { "id": "A7", "result": "passed", "reason": "独立复跑35/35测试、lint、构建/语法和浏览器QA通过，权限、脱敏与三视口均有动态证据。" }
+    ],
+    "risks": [
+      "成功提示关闭图标点击区小于44px，但不是主要操作且具备名称与焦点。",
+      "认证、Provider配置和审计仍使用内存Store。",
+      "真实Provider、生产密钥管理、服务器、域名与部署不在本Change范围。"
+    ],
+    "summary": "iteration 1 独立只读验证通过，A1-A7全部满足。"
+  } }
+}

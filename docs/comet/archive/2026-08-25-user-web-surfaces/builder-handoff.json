@@ -1,0 +1,19 @@
+{
+  "kind": "builder-handoff",
+  "summary": "实现用户网页 Surface：邮箱注册/登录/找回与会话恢复，工作台经同源 HTTP API 完成上传、生成轮询、前后对比、保存/下载，新增作品列表详情、额度充值订单及账户帮助；保持 UI Lock 与移动端、键盘、reduced-motion 边界。",
+  "addressed_acceptance_ids": ["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8"],
+  "checks": [
+    { "name": "npm test", "result": "passed", "note": "35/35 通过，包含 HttpOnly Cookie 和安全错误 API 客户端测试。" },
+    { "name": "npm run lint", "result": "passed", "note": "ESLint 无错误。" },
+    { "name": "npm run build", "result": "passed", "note": "Vite 构建通过。" },
+    { "name": "npm run typecheck", "result": "passed", "note": "JavaScript 项目，命令通过；Vite build 承担语法与模块检查。" },
+    { "name": "npm run qa:browser", "result": "passed", "note": "桌面、390px、320px 完整注册、生成、对比、作品、订单、帮助和退出流程通过；无溢出或意外控制台错误。" },
+    { "name": "src/dist sensitive scan", "result": "passed", "note": "未发现 sessionToken、浏览器存储、支付签名或测试密钥匹配。" }
+  ],
+  "known_limits": [
+    "认证、生成、作品、额度与订单仍使用内存 Store，进程重启会丢失数据。",
+    "本地图像 Provider 返回输入图像副本，仅用于集成验证，不代表真实 AI 生成。",
+    "密码找回邮件不实际发送；本地订单只保持待支付，不发起真实支付或增加额度。",
+    "生产对象存储、邮件、支付、Provider、服务器、域名与部署不在本 Change 范围。"
+  ]
+}
