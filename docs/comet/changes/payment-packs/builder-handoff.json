@@ -1,0 +1,16 @@
+{
+  "kind": "builder-handoff",
+  "summary": "修复 Verifier 发现的支付安全边界：回调只接受 paid/failed/canceled，所有事件先验签再执行幂等返回；补充 pending 不到账、伪造重复事件、未知订单、错误用户和不同事件重复回调测试。",
+  "addressed_acceptance_ids": ["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9"],
+  "checks": [
+    { "name": "npm test", "result": "passed", "note": "23 tests passed, including callback status allowlist, duplicate signature validation, unknown/wrong-user events, idempotent credit grant, expiry and user isolation." },
+    { "name": "npm run lint", "result": "passed", "note": "ESLint completed without errors." },
+    { "name": "npm run build", "result": "passed", "note": "Vite production build completed." },
+    { "name": "npm run typecheck", "result": "passed", "note": "JavaScript project; package script reports syntax check boundary." }
+  ],
+  "known_limits": [
+    "当前支付和订单使用内存存储，生产数据库和真实支付平台适配器属于部署/生产工作。",
+    "当前没有 HTTP 路由、真实签名密钥、商户凭据或生产回调域名。",
+    "默认不退款；实际收费上线需遵守支付平台规则和适用法律。"
+  ]
+}
