@@ -83,6 +83,42 @@ const MIGRATIONS = [
       );
     `,
   },
+  {
+    version: 2,
+    sql: `
+      ALTER TABLE credit_operations RENAME TO credit_reservation_operations;
+      CREATE TABLE credit_operations (
+        operation_id TEXT PRIMARY KEY,
+        idempotency_key TEXT NOT NULL UNIQUE,
+        user_id TEXT NOT NULL REFERENCES app_users(entity_id) ON DELETE RESTRICT,
+        operation_type TEXT NOT NULL CHECK(operation_type IN ('grant', 'reserve', 'settle', 'release')),
+        amount INTEGER NOT NULL CHECK(amount > 0),
+        occurred_at INTEGER NOT NULL,
+        value_json TEXT NOT NULL
+      );
+      CREATE INDEX credit_operations_user_time ON credit_operations(user_id, occurred_at, operation_id);
+    `,
+    backfill(database) {
+      const insert = database.prepare(`
+        INSERT OR IGNORE INTO credit_operations
+          (operation_id, idempotency_key, user_id, operation_type, amount, occurred_at, value_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `)
+      const append = (entry) => insert.run(entry.id, entry.idempotencyKey, entry.userId, entry.type, entry.amount, entry.occurredAt, JSON.stringify(entry))
+      for (const group of database.prepare('SELECT user_id, value_json FROM credit_lot_groups').all()) {
+        for (const lot of JSON.parse(group.value_json)) {
+          append({ id: `migration_grant_${lot.id}`, idempotencyKey: `migration:grant:${lot.id}`, userId: group.user_id, type: 'grant', amount: lot.amount, lotId: lot.id, source: lot.source, expiresAt: lot.expiresAt, occurredAt: lot.createdAt })
+        }
+      }
+      for (const row of database.prepare('SELECT reservation_id, user_id, value_json FROM credit_reservations').all()) {
+        const reservation = JSON.parse(row.value_json)
+        const common = { userId: row.user_id, amount: reservation.amount, reservationId: row.reservation_id, allocations: reservation.allocations }
+        append({ id: `migration_reserve_${row.reservation_id}`, idempotencyKey: `migration:reserve:${row.reservation_id}`, type: 'reserve', occurredAt: reservation.createdAt, ...common })
+        if (reservation.status === 'settled') append({ id: `migration_settle_${row.reservation_id}`, idempotencyKey: `migration:settle:${row.reservation_id}`, type: 'settle', occurredAt: reservation.settledAt ?? reservation.createdAt, ...common })
+        if (reservation.status === 'released') append({ id: `migration_release_${row.reservation_id}`, idempotencyKey: `migration:release:${row.reservation_id}`, type: 'release', occurredAt: reservation.releasedAt ?? reservation.createdAt, ...common })
+      }
+    },
+  },
 ]
 
 function applyMigrations(database) {
@@ -92,6 +128,7 @@ function applyMigrations(database) {
     if (applied.has(migration.version)) continue
     database.transaction(() => {
       database.exec(migration.sql)
+      migration.backfill?.(database)
       database.prepare('INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(migration.version, Date.now())
     })()
   }
@@ -115,11 +152,11 @@ export function openSqliteDatabase({ filename, readonly = false } = {}) {
 export function verifySqliteDatabase(database) {
   const integrity = database.pragma('integrity_check', { simple: true })
   const foreignKeys = database.pragma('foreign_key_check')
-  const requiredTables = ['app_users', 'auth_sessions', 'credit_lot_groups', 'credit_reservations', 'payment_orders', 'generation_tasks', 'works', 'provider_configs', 'stored_objects']
+  const requiredTables = ['app_users', 'auth_sessions', 'password_reset_tokens', 'initialized_credit_users', 'credit_lot_groups', 'credit_reservations', 'credit_reservation_operations', 'credit_operations', 'payment_orders', 'payment_events', 'generation_tasks', 'works', 'provider_configs', 'provider_audit', 'stored_objects']
   const present = new Set(database.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((row) => row.name))
   const missingTables = requiredTables.filter((name) => !present.has(name))
   const ledgerIssues = []
-  if (present.has('credit_lot_groups') && present.has('credit_reservations')) {
+  if (present.has('credit_lot_groups') && present.has('credit_reservations') && present.has('credit_operations')) {
     const groups = database.prepare('SELECT user_id, value_json FROM credit_lot_groups').all()
     const lots = new Map()
     for (const group of groups) {
@@ -129,13 +166,41 @@ export function verifySqliteDatabase(database) {
       }
     }
     const expectedReserved = new Map()
+    const expectedConsumed = new Map()
+    const grantsByLot = new Map()
+    const entriesByReservation = new Map()
+    for (const row of database.prepare('SELECT operation_id, idempotency_key, user_id, operation_type, amount, occurred_at, value_json FROM credit_operations ORDER BY occurred_at, operation_id').all()) {
+      const entry = JSON.parse(row.value_json)
+      if (entry.id !== row.operation_id || entry.idempotencyKey !== row.idempotency_key || entry.userId !== row.user_id || entry.type !== row.operation_type || entry.amount !== row.amount || entry.occurredAt !== row.occurred_at) ledgerIssues.push(`operation-column-mismatch:${row.operation_id}`)
+      if (entry.type === 'grant') grantsByLot.set(entry.lotId, (grantsByLot.get(entry.lotId) ?? 0) + entry.amount)
+      if (entry.reservationId) {
+        const entries = entriesByReservation.get(entry.reservationId) ?? []
+        entries.push(entry)
+        entriesByReservation.set(entry.reservationId, entries)
+      }
+      if (entry.type === 'settle') for (const allocation of entry.allocations ?? []) expectedConsumed.set(allocation.lotId, (expectedConsumed.get(allocation.lotId) ?? 0) + allocation.quantity)
+      if (entry.type !== 'grant' && (entry.allocations ?? []).reduce((total, allocation) => total + allocation.quantity, 0) !== entry.amount) ledgerIssues.push(`operation-allocation-mismatch:${entry.id}`)
+    }
     for (const row of database.prepare('SELECT value_json FROM credit_reservations').all()) {
       const reservation = JSON.parse(row.value_json)
+      const entries = entriesByReservation.get(reservation.id) ?? []
+      const reserves = entries.filter((entry) => entry.type === 'reserve')
+      const terminals = entries.filter((entry) => entry.type === 'settle' || entry.type === 'release')
+      if (reserves.length !== 1 || reserves[0]?.amount !== reservation.amount) ledgerIssues.push(`reservation-operation-mismatch:${reservation.id}`)
+      if (reservation.status === 'reserved' && terminals.length !== 0) ledgerIssues.push(`unexpected-terminal-operation:${reservation.id}`)
+      const expectedTerminal = { settled: 'settle', released: 'release' }[reservation.status]
+      if (reservation.status !== 'reserved' && (terminals.length !== 1 || terminals[0]?.type !== expectedTerminal)) ledgerIssues.push(`terminal-operation-mismatch:${reservation.id}`)
       if (reservation.status !== 'reserved') continue
       for (const allocation of reservation.allocations) expectedReserved.set(allocation.lotId, (expectedReserved.get(allocation.lotId) ?? 0) + allocation.quantity)
     }
-    for (const [lotId, lot] of lots) if ((expectedReserved.get(lotId) ?? 0) !== lot.reserved) ledgerIssues.push(`reservation-mismatch:${lotId}`)
+    for (const [lotId, lot] of lots) {
+      if ((grantsByLot.get(lotId) ?? 0) !== lot.amount) ledgerIssues.push(`grant-mismatch:${lotId}`)
+      if ((expectedReserved.get(lotId) ?? 0) !== lot.reserved) ledgerIssues.push(`reservation-mismatch:${lotId}`)
+      if ((expectedConsumed.get(lotId) ?? 0) !== lot.consumed) ledgerIssues.push(`consumption-mismatch:${lotId}`)
+    }
     for (const lotId of expectedReserved.keys()) if (!lots.has(lotId)) ledgerIssues.push(`missing-lot:${lotId}`)
+    for (const lotId of expectedConsumed.keys()) if (!lots.has(lotId)) ledgerIssues.push(`missing-consumed-lot:${lotId}`)
+    for (const lotId of grantsByLot.keys()) if (!lots.has(lotId)) ledgerIssues.push(`missing-granted-lot:${lotId}`)
   }
   return {
     ok: integrity === 'ok' && foreignKeys.length === 0 && missingTables.length === 0 && ledgerIssues.length === 0,

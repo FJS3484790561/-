@@ -85,7 +85,7 @@ export class PaymentService {
         this.store.events.set(eventId, result)
         return result
       }
-      const grant = this.creditLedger.grantForUser({ userId: order.userId, amount: order.credits, source: `payment:${order.id}`, createdAt: this.clock() })
+      const grant = this.creditLedger.grantForUser({ userId: order.userId, amount: order.credits, source: `payment:${order.id}`, createdAt: this.clock(), idempotencyKey: `payment:${order.id}` })
       if (!grant.ok) return { ok: false, code: 'CREDIT_GRANT_FAILED' }
       order.status = 'paid'
       order.paidAt = this.clock()

@@ -135,6 +135,61 @@ test('rolls back credit settlement when the generation success record cannot be 
   runtime.close()
 })
 
+test('rolls back the credit reservation when the initial generation task cannot be written', async (context) => {
+  const root = await mkdtemp(join(tmpdir(), 'interior-generation-create-rollback-'))
+  context.after(() => rm(root, { recursive: true, force: true }))
+  const stores = createSqliteStores({ filename: join(root, 'app.sqlite') })
+  const runtime = runtimeFor(stores)
+  const login = await registerAndLogin(runtime, 'generation-create-rollback@example.com')
+  assert.equal(runtime.creditLedger.getBalance({ sessionToken: login.sessionToken }).available, 3)
+  stores.generations.tasks.set = () => { throw new Error('simulated initial task write failure') }
+  const generation = await runtime.generationService.createGeneration({
+    sessionToken: login.sessionToken,
+    image: { name: 'room.jpg', type: 'image/jpeg', data: Buffer.from([0xff, 0xd8, 0xff, 0x00]) },
+    params: { room: '客厅', theme: '现代简约', scale: '均衡', preferences: {} },
+  })
+  assert.deepEqual(generation, { ok: false, code: 'GENERATION_PERSISTENCE_FAILED' })
+  assert.equal(runtime.creditLedger.getBalance({ sessionToken: login.sessionToken }).available, 3)
+  assert.equal(stores.database.prepare('SELECT COUNT(*) AS count FROM credit_reservations').get().count, 0)
+  assert.equal(stores.database.prepare("SELECT COUNT(*) AS count FROM credit_operations WHERE operation_type = 'reserve'").get().count, 0)
+  runtime.close()
+})
+
+test('serializes idempotent grants across two SQLite connections', async (context) => {
+  const root = await mkdtemp(join(tmpdir(), 'interior-concurrent-grant-'))
+  context.after(() => rm(root, { recursive: true, force: true }))
+  const filename = join(root, 'app.sqlite')
+  const firstStores = createSqliteStores({ filename })
+  const firstRuntime = runtimeFor(firstStores)
+  const login = await registerAndLogin(firstRuntime, 'concurrent-grant@example.com')
+  const secondStores = createSqliteStores({ filename })
+  const secondRuntime = runtimeFor(secondStores)
+  const grants = await Promise.all([
+    Promise.resolve(firstRuntime.creditLedger.grantForUser({ userId: login.user.id, amount: 12, source: 'payment:shared', idempotencyKey: 'payment:shared' })),
+    Promise.resolve(secondRuntime.creditLedger.grantForUser({ userId: login.user.id, amount: 12, source: 'payment:shared', idempotencyKey: 'payment:shared' })),
+  ])
+  assert.equal(grants.every((grant) => grant.ok), true)
+  assert.equal(new Set(grants.map((grant) => grant.lot.id)).size, 1)
+  assert.equal(firstStores.database.prepare("SELECT COUNT(*) AS count FROM credit_operations WHERE idempotency_key = 'payment:shared'").get().count, 1)
+  assert.equal(firstRuntime.creditLedger.getBalanceForUser({ userId: login.user.id }).available, 15)
+  secondRuntime.close()
+  firstRuntime.close()
+})
+
+test('rolls back provider configuration when its audit record cannot be written', async (context) => {
+  const root = await mkdtemp(join(tmpdir(), 'interior-provider-rollback-'))
+  context.after(() => rm(root, { recursive: true, force: true }))
+  const stores = createSqliteStores({ filename: join(root, 'app.sqlite') })
+  const runtime = runtimeFor(stores)
+  assert.equal((await runtime.provisionAdmin({ password: 'admin-password' })).ok, true)
+  const admin = await runtime.authService.login({ email: 'admin@example.com', password: 'admin-password' })
+  stores.providers.audit.push = () => { throw new Error('simulated audit write failure') }
+  assert.throws(() => runtime.adminProviderService.create({ sessionToken: admin.sessionToken, name: 'rollback-provider', endpoint: 'https://provider.example.test', model: 'one', apiKey: 'test-key' }), /audit write failure/)
+  assert.equal(stores.database.prepare('SELECT COUNT(*) AS count FROM provider_configs').get().count, 0)
+  assert.equal(stores.database.prepare('SELECT COUNT(*) AS count FROM provider_audit').get().count, 0)
+  runtime.close()
+})
+
 test('stores object bytes outside SQLite and preserves metadata', async (context) => {
   const root = await mkdtemp(join(tmpdir(), 'interior-objects-'))
   context.after(() => rm(root, { recursive: true, force: true }))
@@ -178,7 +233,12 @@ test('creates a verified backup that can be opened independently', async (contex
   context.after(() => rm(root, { recursive: true, force: true }))
   const stores = createSqliteStores({ filename: join(root, 'app.sqlite') })
   const runtime = runtimeFor(stores)
-  await registerAndLogin(runtime, 'backup@example.com')
+  const login = await registerAndLogin(runtime, 'backup@example.com')
+  runtime.creditLedger.getBalance({ sessionToken: login.sessionToken })
+  const reservation = runtime.creditLedger.reserve({ sessionToken: login.sessionToken, operationId: 'backup-generation' })
+  runtime.creditLedger.settle({ sessionToken: login.sessionToken, reservationId: reservation.reservation.id })
+  const operationCount = stores.database.prepare('SELECT COUNT(*) AS count FROM credit_operations').get().count
+  assert.equal(operationCount, 3)
   const destination = join(root, 'restore-check', 'backup.sqlite')
   const result = await backupSqliteDatabase(stores.database, destination)
   assert.equal(result.verification.ok, true)
@@ -187,7 +247,26 @@ test('creates a verified backup that can be opened independently', async (contex
   const restored = openSqliteDatabase({ filename: destination, readonly: true })
   assert.equal(verifySqliteDatabase(restored).ok, true)
   assert.equal(restored.prepare('SELECT COUNT(*) AS count FROM app_users').get().count, 1)
+  assert.equal(restored.prepare('SELECT COUNT(*) AS count FROM credit_operations').get().count, operationCount)
   restored.close()
+})
+
+test('reapplying migrations is idempotent and preserves the credit journal', async (context) => {
+  const root = await mkdtemp(join(tmpdir(), 'interior-repeat-migration-'))
+  context.after(() => rm(root, { recursive: true, force: true }))
+  const filename = join(root, 'app.sqlite')
+  let stores = createSqliteStores({ filename })
+  let runtime = runtimeFor(stores)
+  const login = await registerAndLogin(runtime, 'migration@example.com')
+  runtime.creditLedger.getBalance({ sessionToken: login.sessionToken })
+  runtime.close()
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    stores = createSqliteStores({ filename })
+    assert.deepEqual(stores.database.prepare('SELECT version FROM schema_migrations ORDER BY version').all().map((row) => row.version), [1, 2])
+    assert.equal(stores.database.prepare('SELECT COUNT(*) AS count FROM credit_operations').get().count, 1)
+    assert.equal(verifySqliteDatabase(stores.database).ok, true)
+    stores.close()
+  }
 })
 
 test('rejects incomplete production persistence configuration instead of falling back to memory', async (context) => {

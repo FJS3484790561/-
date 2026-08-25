@@ -87,8 +87,34 @@ class SqliteAuditCollection {
   }
 }
 
+class SqliteCreditJournal {
+  constructor(database) {
+    this.insert = database.prepare(`
+      INSERT INTO credit_operations
+        (operation_id, idempotency_key, user_id, operation_type, amount, occurred_at, value_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `)
+    this.selectByKey = database.prepare('SELECT value_json FROM credit_operations WHERE idempotency_key = ?')
+    this.selectAll = database.prepare('SELECT value_json FROM credit_operations ORDER BY occurred_at, operation_id')
+  }
+
+  get(idempotencyKey) {
+    const row = this.selectByKey.get(String(idempotencyKey))
+    return row ? decode(row.value_json) : undefined
+  }
+
+  append(entry) {
+    this.insert.run(entry.id, entry.idempotencyKey, entry.userId, entry.type, entry.amount, entry.occurredAt, encode(entry))
+    return entry
+  }
+
+  values() {
+    return this.selectAll.all().map((row) => decode(row.value_json)).values()
+  }
+}
+
 function transaction(database) {
-  return (work) => database.transaction(work)()
+  return (work) => database.transaction(work).immediate()
 }
 
 export function createSqliteStores({ filename } = {}) {
@@ -103,7 +129,8 @@ export function createSqliteStores({ filename } = {}) {
   const credits = {
     lots: new SqliteJsonMap(database, { table: 'credit_lot_groups', keyColumn: 'user_id' }),
     reservations: new SqliteJsonMap(database, { table: 'credit_reservations', keyColumn: 'reservation_id', extras: { user_id: (value) => value.userId } }),
-    operations: new SqliteJsonMap(database, { table: 'credit_operations', keyColumn: 'operation_key', extras: { reservation_id: (value) => value.id } }),
+    operations: new SqliteJsonMap(database, { table: 'credit_reservation_operations', keyColumn: 'operation_key', extras: { reservation_id: (value) => value.id } }),
+    journal: new SqliteCreditJournal(database),
     initializedUsers: new SqliteIdSet(database, 'initialized_credit_users', 'user_id'),
     transaction: runTransaction,
   }

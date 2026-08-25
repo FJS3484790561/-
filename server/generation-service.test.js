@@ -7,12 +7,12 @@ import { CreditLedgerService, MemoryCreditStore } from './credit-ledger.js'
 const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3])
 const params = { room: '客厅', theme: '现代简约', scale: '均衡', preferences: { layout: true } }
 
-async function fixture({ provider, providerTimeoutMs = 100 } = {}) {
+async function fixture({ provider, providerTimeoutMs = 100, objectStorage = null, fetchImpl } = {}) {
   const authService = new AuthService({ store: new MemoryAuthStore() })
   await authService.register({ email: 'user@example.com', password: 'correct-horse' })
   const login = await authService.login({ email: 'user@example.com', password: 'correct-horse' })
   const providers = new ProviderRegistry(provider ? { default: provider } : {})
-  return { authService, token: login.sessionToken, service: new GenerationService({ authService, store: new MemoryGenerationStore(), providers, providerTimeoutMs }) }
+  return { authService, token: login.sessionToken, service: new GenerationService({ authService, store: new MemoryGenerationStore(), providers, providerTimeoutMs, objectStorage, fetchImpl }) }
 }
 
 test('creates an async generation and returns one safe result', async () => {
@@ -89,4 +89,26 @@ test('does not call the provider when all credits are exhausted', async () => {
   const service = new GenerationService({ authService: fixtureData.authService, store: new MemoryGenerationStore(), providers: new ProviderRegistry({ default: { generate: async () => { calls += 1; return { effectImage: { url: '/should-not-run' } } } } }), creditLedger: ledger })
   assert.deepEqual(await service.createGeneration({ sessionToken: fixtureData.token, image: { type: 'image/jpeg', data: jpeg }, params }), { ok: false, code: 'INSUFFICIENT_CREDITS' })
   assert.equal(calls, 0)
+})
+
+test('downloads a remote provider result into protected object storage', async () => {
+  const stored = []
+  const objectStorage = {
+    async put(record) {
+      stored.push(record)
+      return { key: record.key, mimeType: record.mimeType }
+    },
+  }
+  const fixtureData = await fixture({
+    provider: { generate: async () => ({ effectImage: { url: 'https://provider.example.test/result.jpg', mimeType: 'image/jpeg' } }) },
+    objectStorage,
+    fetchImpl: async () => new Response(jpeg, { status: 200, headers: { 'content-type': 'image/jpeg', 'content-length': String(jpeg.length) } }),
+  })
+  const created = await fixtureData.service.createGeneration({ sessionToken: fixtureData.token, image: { type: 'image/jpeg', data: jpeg }, params })
+  const result = await fixtureData.service.waitForGeneration(created.task.id)
+  assert.equal(result.status, 'succeeded')
+  assert.equal(stored.length, 2)
+  assert.match(result.result.effectImage.url, /^\/api\/objects\//u)
+  assert.equal(result.result.effectImage.url.includes('provider.example.test'), false)
+  assert.deepEqual(stored[1].body, jpeg)
 })

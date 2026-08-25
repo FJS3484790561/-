@@ -19,11 +19,33 @@ export class MemoryCreditStore {
     this.lots = new Map()
     this.reservations = new Map()
     this.operations = new Map()
+    this.journal = new MemoryCreditJournal()
     this.initializedUsers = new Set()
   }
 
   transaction(work) {
     return work()
+  }
+}
+
+class MemoryCreditJournal {
+  constructor() {
+    this.entries = new Map()
+  }
+
+  get(idempotencyKey) {
+    const entry = this.entries.get(idempotencyKey)
+    return entry ? structuredClone(entry) : undefined
+  }
+
+  append(entry) {
+    if (this.entries.has(entry.idempotencyKey)) throw new Error('duplicate credit operation')
+    this.entries.set(entry.idempotencyKey, structuredClone(entry))
+    return entry
+  }
+
+  values() {
+    return [...this.entries.values()].map((entry) => structuredClone(entry)).values()
   }
 }
 
@@ -45,21 +67,30 @@ export class CreditLedgerService {
     return this.store.transaction(() => {
       if (this.store.initializedUsers.has(userId)) return { ok: true, created: false }
       this.store.initializedUsers.add(userId)
-      this.#grantForUser({ userId, amount: INITIAL_FREE_CREDITS, source: 'free_signup' })
+      this.#grantForUser({ userId, amount: INITIAL_FREE_CREDITS, source: 'free_signup', idempotencyKey: `signup:${userId}` })
       return { ok: true, created: true }
     })
   }
 
-  grant({ sessionToken, amount, source = 'grant', expiresAt }) {
+  grant({ sessionToken, amount, source = 'grant', expiresAt, idempotencyKey }) {
     const user = this.#user(sessionToken)
     if (!user) return { ok: false, code: 'UNAUTHORIZED' }
-    return this.grantForUser({ userId: user.id, amount, source, expiresAt })
+    return this.grantForUser({ userId: user.id, amount, source, expiresAt, idempotencyKey })
   }
 
-  grantForUser({ userId, amount, source = 'grant', createdAt = this.clock(), expiresAt }) {
+  grantForUser({ userId, amount, source = 'grant', createdAt = this.clock(), expiresAt, idempotencyKey = `grant:${randomUUID()}` }) {
     if (!positiveInteger(amount)) return { ok: false, code: 'INVALID_CREDIT_AMOUNT' }
-    const lot = this.#grantForUser({ userId, amount, source, createdAt, expiresAt })
-    return { ok: true, lot: this.#publicLot(lot) }
+    return this.store.transaction(() => {
+      const existing = this.store.journal.get(idempotencyKey)
+      if (existing) {
+        if (existing.type !== 'grant' || existing.userId !== userId || existing.amount !== amount || existing.source !== source) return { ok: false, code: 'IDEMPOTENCY_CONFLICT' }
+        const lot = this.#lotsForUser(userId).find((candidate) => candidate.id === existing.lotId)
+        if (!lot) throw new Error('credit lot not found')
+        return { ok: true, lot: this.#publicLot(lot), duplicate: true }
+      }
+      const lot = this.#grantForUser({ userId, amount, source, createdAt, expiresAt, idempotencyKey })
+      return { ok: true, lot: this.#publicLot(lot) }
+    })
   }
 
   getBalance({ sessionToken }) {
@@ -110,6 +141,7 @@ export class CreditLedgerService {
       const reservation = { id: `reservation_${randomUUID()}`, userId, operationId, amount, allocations, status: 'reserved', createdAt: now }
       this.store.reservations.set(reservation.id, reservation)
       this.store.operations.set(operationKey, reservation)
+      this.#appendOperation({ idempotencyKey: `reserve:${operationKey}`, userId, type: 'reserve', amount, reservationId: reservation.id, allocations, occurredAt: now })
       return { ok: true, reservation: this.#publicReservation(reservation) }
     })
   }
@@ -138,6 +170,7 @@ export class CreditLedgerService {
       this.store.lots.set(userId, lots)
       this.store.reservations.set(reservationId, reservation)
       this.store.operations.set(`${userId}:${reservation.operationId}`, reservation)
+      this.#appendOperation({ idempotencyKey: `settle:${reservation.id}`, userId, type: 'settle', amount: reservation.amount, reservationId: reservation.id, allocations: reservation.allocations, occurredAt: reservation.settledAt })
       return { ok: true, reservation: this.#publicReservation(reservation) }
     })
   }
@@ -165,6 +198,7 @@ export class CreditLedgerService {
       this.store.lots.set(userId, lots)
       this.store.reservations.set(reservationId, reservation)
       this.store.operations.set(`${userId}:${reservation.operationId}`, reservation)
+      this.#appendOperation({ idempotencyKey: `release:${reservation.id}`, userId, type: 'release', amount: reservation.amount, reservationId: reservation.id, allocations: reservation.allocations, occurredAt: reservation.releasedAt })
       return { ok: true, reservation: this.#publicReservation(reservation) }
     })
   }
@@ -173,12 +207,17 @@ export class CreditLedgerService {
     return this.authService.getSession(sessionToken)
   }
 
-  #grantForUser({ userId, amount, source, createdAt = this.clock(), expiresAt = addMonths(createdAt, CREDIT_EXPIRY_MONTHS) }) {
+  #grantForUser({ userId, amount, source, createdAt = this.clock(), expiresAt = addMonths(createdAt, CREDIT_EXPIRY_MONTHS), idempotencyKey }) {
     const lot = { id: `credit_lot_${randomUUID()}`, userId, amount, consumed: 0, reserved: 0, source, createdAt, expiresAt }
     const userLots = this.store.lots.get(userId) ?? []
     userLots.push(lot)
     this.store.lots.set(userId, userLots)
+    this.#appendOperation({ idempotencyKey, userId, type: 'grant', amount, lotId: lot.id, source, expiresAt: lot.expiresAt, occurredAt: createdAt })
     return lot
+  }
+
+  #appendOperation(entry) {
+    this.store.journal.append({ id: `credit_operation_${randomUUID()}`, ...entry, allocations: entry.allocations?.map((allocation) => ({ ...allocation })) })
   }
 
   #lotsForUser(userId) {

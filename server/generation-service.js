@@ -52,6 +52,28 @@ function imageExtension(mimeType) {
   return mimeType === 'image/png' ? 'png' : 'jpg'
 }
 
+async function responseBytes(response, maxBytes) {
+  if (!response.body?.getReader) {
+    const bytes = Buffer.from(await response.arrayBuffer())
+    if (bytes.length > maxBytes) throw new Error('Provider image is too large')
+    return bytes
+  }
+  const reader = response.body.getReader()
+  const chunks = []
+  let size = 0
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    size += value.byteLength
+    if (size > maxBytes) {
+      await reader.cancel()
+      throw new Error('Provider image is too large')
+    }
+    chunks.push(Buffer.from(value))
+  }
+  return Buffer.concat(chunks, size)
+}
+
 export class MemoryGenerationStore {
   constructor() {
     this.tasks = new Map()
@@ -77,7 +99,7 @@ export class ProviderRegistry {
 }
 
 export class GenerationService {
-  constructor({ authService, store = new MemoryGenerationStore(), providers = new ProviderRegistry(), providerName = 'default', clock = () => Date.now(), maxImageBytes = DEFAULT_MAX_IMAGE_BYTES, providerTimeoutMs = 30_000, creditLedger = null, objectStorage = null } = {}) {
+  constructor({ authService, store = new MemoryGenerationStore(), providers = new ProviderRegistry(), providerName = 'default', clock = () => Date.now(), maxImageBytes = DEFAULT_MAX_IMAGE_BYTES, providerTimeoutMs = 30_000, creditLedger = null, objectStorage = null, fetchImpl = globalThis.fetch } = {}) {
     if (!authService) throw new Error('authService is required')
     this.authService = authService
     this.store = store
@@ -88,6 +110,7 @@ export class GenerationService {
     this.providerTimeoutMs = providerTimeoutMs
     this.creditLedger = creditLedger
     this.objectStorage = objectStorage
+    this.fetchImpl = fetchImpl
   }
 
   createGeneration({ sessionToken, image, params }) {
@@ -96,11 +119,21 @@ export class GenerationService {
     const validation = validateRequest({ image, params }, this.maxImageBytes)
     if (validation) return Promise.resolve(validation)
     const id = `generation_${randomUUID()}`
-    const reservation = this.creditLedger?.reserveForUser({ userId: user.id, operationId: id, amount: 1 })
-    if (reservation && !reservation.ok) return Promise.resolve(reservation)
     const task = { id, userId: user.id, status: 'queued', createdAt: this.clock(), updatedAt: this.clock(), input: { name: image.name ?? 'upload', type: image.type, size: imageBytes(image).length }, params: { ...params, preferences: { ...(params.preferences ?? {}) } } }
-    if (reservation) task.reservationId = reservation.reservation.id
-    this.store.tasks.set(id, task)
+    let reservation
+    try {
+      const prepared = this.store.transaction(() => {
+        reservation = this.creditLedger?.reserveForUser({ userId: user.id, operationId: id, amount: 1 })
+        if (reservation && !reservation.ok) return reservation
+        if (reservation) task.reservationId = reservation.reservation.id
+        this.store.tasks.set(id, task)
+        return { ok: true }
+      })
+      if (!prepared.ok) return Promise.resolve(prepared)
+    } catch {
+      if (reservation?.ok) this.creditLedger?.releaseForUser({ userId: user.id, reservationId: reservation.reservation.id })
+      return Promise.resolve(error('GENERATION_PERSISTENCE_FAILED'))
+    }
     queueMicrotask(() => this.#run(task, image))
     return Promise.resolve({ ok: true, task: this.#publicTask(task) })
   }
@@ -144,11 +177,9 @@ export class GenerationService {
       if (!output?.effectImage?.url) return this.#fail(task, { code: 'INVALID_PROVIDER_RESPONSE' })
       let effectImage = { url: String(output.effectImage.url), mimeType: output.effectImage.mimeType ?? 'image/jpeg' }
       if (this.objectStorage) {
-        const result = storedImageBytes(output.effectImage)
-        if (result) {
-          const stored = await this.#storeImage(task, 'result', result)
-          effectImage = { url: this.#objectUrl(stored.key), objectKey: stored.key, mimeType: stored.mimeType }
-        }
+        const result = await this.#providerImageBytes(output.effectImage)
+        const stored = await this.#storeImage(task, 'result', result)
+        effectImage = { url: this.#objectUrl(stored.key), objectKey: stored.key, mimeType: stored.mimeType }
       }
       this.store.transaction(() => {
         const settlement = this.creditLedger?.settleForUser({ userId: task.userId, reservationId: task.reservationId })
@@ -169,11 +200,13 @@ export class GenerationService {
   }
 
   #fail(task, reason) {
-    if (this.creditLedger && task.reservationId) this.creditLedger.releaseForUser({ userId: task.userId, reservationId: task.reservationId })
-    task.status = 'failed'
-    task.error = { code: reason.code, message: reason.message ?? '暂时无法生成设计，请稍后重试。' }
-    task.updatedAt = this.clock()
-    this.store.tasks.set(task.id, task)
+    this.store.transaction(() => {
+      if (this.creditLedger && task.reservationId) this.creditLedger.releaseForUser({ userId: task.userId, reservationId: task.reservationId })
+      task.status = 'failed'
+      task.error = { code: reason.code, message: reason.message ?? '暂时无法生成设计，请稍后重试。' }
+      task.updatedAt = this.clock()
+      this.store.tasks.set(task.id, task)
+    })
   }
 
   #publicTask(task) {
@@ -184,6 +217,26 @@ export class GenerationService {
     if (!image?.bytes || !image.mimeType) throw new Error('Image bytes are required for object storage')
     const key = `users/${task.userId}/generations/${task.id}/${kind}.${imageExtension(image.mimeType)}`
     return this.objectStorage.put({ key, body: image.bytes, mimeType: image.mimeType, ownerId: task.userId, metadata: { kind, generationId: task.id } })
+  }
+
+  async #providerImageBytes(image) {
+    const direct = storedImageBytes(image)
+    if (direct) return direct
+    let url
+    try {
+      url = new URL(String(image?.url))
+    } catch {
+      throw new Error('Provider image URL is invalid')
+    }
+    if (url.protocol !== 'https:' || url.username || url.password || typeof this.fetchImpl !== 'function') throw new Error('Provider image bytes are unavailable')
+    const response = await this.fetchImpl(url, { signal: AbortSignal.timeout(this.providerTimeoutMs) })
+    if (!response.ok) throw new Error('Provider image download failed')
+    const contentLength = Number(response.headers.get('content-length') ?? 0)
+    if (contentLength > this.maxImageBytes) throw new Error('Provider image is too large')
+    const bytes = await responseBytes(response, this.maxImageBytes)
+    const mimeType = image.mimeType ?? response.headers.get('content-type')?.split(';')[0]
+    if (!ALLOWED_IMAGE_TYPES.has(mimeType) || bytes.length === 0 || bytes.length > this.maxImageBytes || !matchesImageSignature(mimeType, bytes)) throw new Error('Provider image content is invalid')
+    return { bytes, mimeType }
   }
 
   #objectUrl(key) {
