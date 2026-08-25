@@ -1,0 +1,10 @@
+{
+  "kind": "dispatch-verifier",
+  "checks": [
+    { "id": "test", "name": "npm test", "executable": "npm", "argv": ["test"], "cwdRef": ".", "timeoutMs": 120000, "repeatable": true },
+    { "id": "lint", "name": "npm run lint", "executable": "npm", "argv": ["run", "lint"], "cwdRef": ".", "timeoutMs": 120000, "repeatable": true },
+    { "id": "build", "name": "npm run build", "executable": "npm", "argv": ["run", "build"], "cwdRef": ".", "timeoutMs": 120000, "repeatable": true },
+    { "id": "typecheck", "name": "npm run typecheck", "executable": "npm", "argv": ["run", "typecheck"], "cwdRef": ".", "timeoutMs": 120000, "repeatable": true },
+    { "id": "browser-qa", "name": "npm run qa:browser", "executable": "npm", "argv": ["run", "qa:browser"], "cwdRef": ".", "timeoutMs": 120000, "repeatable": true }
+  ]
+}

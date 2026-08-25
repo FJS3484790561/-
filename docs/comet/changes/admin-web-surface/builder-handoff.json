@@ -1,0 +1,18 @@
+{
+  "kind": "builder-handoff",
+  "summary": "实现独立管理员网页 Surface：预置管理员登录和会话恢复、普通用户 403、Provider 列表/空状态/创建/编辑/启停/审计及安全错误恢复；密钥仅输入不回填，并保持 UI Lock、移动端和键盘边界。",
+  "addressed_acceptance_ids": ["A1", "A2", "A3", "A4", "A5", "A6", "A7"],
+  "checks": [
+    { "name": "npm test", "result": "passed", "note": "35/35 通过，包含管理员 HTTP 路由、Cookie 身份和身份字段覆盖测试。" },
+    { "name": "npm run lint", "result": "passed", "note": "ESLint 无错误。" },
+    { "name": "npm run build", "result": "passed", "note": "Vite 构建通过。" },
+    { "name": "npm run typecheck", "result": "passed", "note": "JavaScript 项目，命令通过；Vite build 承担语法与模块检查。" },
+    { "name": "npm run qa:browser", "result": "passed", "note": "普通用户 403 与管理员 Provider 全流程通过；桌面、390px、320px 无溢出，焦点可见，密钥不显示或回填。" },
+    { "name": "src/dist sensitive scan", "result": "passed", "note": "构建产物无敏感匹配；源码唯一 sessionToken 文本为单元测试中的负向断言。" }
+  ],
+  "known_limits": [
+    "管理员账号仍由服务器环境变量和内存 Store 预置，进程重启会丢失。",
+    "Provider 配置与审计仍为内存实现，本地 Provider 不代表真实服务。",
+    "生产密钥管理、持久化、真实 Provider、服务器、域名与部署不在本 Change 范围。"
+  ]
+}

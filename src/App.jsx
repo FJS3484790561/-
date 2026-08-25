@@ -1,144 +1,197 @@
-import { useRef, useState } from 'react'
-import {
-  BookOpen,
-  Check,
-  ChevronDown,
-  Download,
-  FolderHeart,
-  ImagePlus,
-  Info,
-  Sparkles,
-  WandSparkles,
-} from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Activity, AlertTriangle, CheckCircle2, KeyRound, LogOut, Pencil, Plus, RefreshCw, ServerCog, ShieldCheck, X } from 'lucide-react'
+import { adminApi, ApiError } from './admin-api'
 
-const themes = ['现代简约', '北欧', '日式', '奶油风', '原木风', '轻奢']
-const rooms = ['客厅', '卧室', '餐厅', '厨房', '书房']
-const scales = ['保真', '均衡', '创意', '大胆']
+const blank = { name: '', endpoint: '', model: '' }
+const copy = {
+  INVALID_CREDENTIALS: '邮箱或密码不正确。',
+  VALIDATION_ERROR: '请检查表单中的必填项。',
+  PROVIDER_ALREADY_EXISTS: '该 Provider 名称已存在。',
+  NOT_FOUND: '该 Provider 已不存在，请刷新列表。',
+  INTERNAL_ERROR: '服务暂时不可用，请稍后重试。',
+  INVALID_RESPONSE: '服务返回了无法识别的响应。',
+}
+const messageFor = (error, fallback = '操作未完成，请稍后重试。') => error instanceof TypeError ? '无法连接本地服务，请确认 API 已启动。' : copy[error?.code] || fallback
+const formatTime = (value) => new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
 
-function SelectField({ label, value, options, onChange }) {
-  return (
-    <label className="field">
-      <span>{label}</span>
-      <span className="select-wrap">
-        <select value={value} onChange={(event) => onChange(event.target.value)}>
-          {options.map((option) => <option key={option}>{option}</option>)}
-        </select>
-        <ChevronDown size={17} aria-hidden="true" />
-      </span>
-    </label>
-  )
+function Login({ onAuthenticated }) {
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState('')
+  async function submit(event) {
+    event.preventDefault()
+    setBusy(true)
+    setMessage('')
+    const form = event.currentTarget
+    const data = new FormData(form)
+    try {
+      const result = await adminApi.login(data.get('email'), data.get('password'))
+      form.reset()
+      await onAuthenticated(result.user)
+    } catch (error) {
+      setMessage(messageFor(error, '登录失败，请重试。'))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return <main className="auth-shell"><section className="auth-panel" aria-labelledby="login-title">
+    <Brand />
+    <div className="auth-heading"><span className="kicker"><ShieldCheck size={15} />受限区域</span><h1 id="login-title">管理员登录</h1><p>使用服务器预置的管理员账号进入配置控制台。</p></div>
+    <form className="auth-form" onSubmit={submit}>
+      <label><span>管理员邮箱</span><input name="email" type="email" autoComplete="username" required placeholder="name@example.com" /></label>
+      <label><span>密码</span><input name="password" type="password" autoComplete="current-password" minLength="8" required placeholder="输入密码" /></label>
+      {message && <Alert kind="error">{message}</Alert>}
+      <button className="primary-button" type="submit" disabled={busy}>{busy ? <RefreshCw className="spin" size={18} /> : <KeyRound size={18} />}{busy ? '正在验证' : '安全登录'}</button>
+    </form>
+    <p className="auth-footnote">管理员账号不可在网页注册，由服务器内部预置。</p>
+  </section></main>
+}
+
+function Brand() {
+  return <div className="brand"><span className="brand-mark"><ServerCog size={21} /></span><span><strong>空间设计管理台</strong><small>Provider Operations</small></span></div>
+}
+
+function Alert({ kind, children, action }) {
+  return <div className={`alert ${kind}`} role={kind === 'error' ? 'alert' : 'status'}>{kind === 'error' ? <AlertTriangle size={17} /> : <CheckCircle2 size={17} />}<span>{children}</span>{action}</div>
+}
+
+function Forbidden({ email, onLogout }) {
+  return <main className="auth-shell"><section className="auth-panel permission-panel">
+    <span className="permission-icon"><ShieldCheck size={34} /></span><span className="kicker">HTTP 403</span>
+    <h1>没有管理员权限</h1><p>账号 <strong>{email}</strong> 已登录，但不能读取或修改 Provider 配置。</p>
+    <button className="secondary-button" type="button" onClick={onLogout}><LogOut size={17} />退出并更换账号</button>
+  </section></main>
+}
+
+function ProviderForm({ provider, onClose, onSaved }) {
+  const [values, setValues] = useState(provider ? { name: provider.name, endpoint: provider.endpoint, model: provider.model } : blank)
+  const [fields, setFields] = useState({})
+  const [message, setMessage] = useState('')
+  const [busy, setBusy] = useState(false)
+  const editing = Boolean(provider)
+  function validate(form) {
+    const errors = {}
+    if (!values.name.trim()) errors.name = '请输入名称。'
+    if (!values.endpoint.trim()) errors.endpoint = '请输入端点。'
+    else try {
+      const url = new URL(values.endpoint)
+      if (!['http:', 'https:'].includes(url.protocol)) errors.endpoint = '请输入有效的 HTTP(S) 地址。'
+    } catch { errors.endpoint = '请输入完整地址，例如 https://example.com/v1。' }
+    if (!values.model.trim()) errors.model = '请输入模型名称。'
+    if (!editing && !form.elements.apiKey.value.trim()) errors.apiKey = '新建 Provider 时必须输入密钥。'
+    setFields(errors)
+    return !Object.keys(errors).length
+  }
+  async function submit(event) {
+    event.preventDefault()
+    const form = event.currentTarget
+    if (!validate(form)) return
+    setBusy(true); setMessage(''); setFields({})
+    const key = form.elements.apiKey.value
+    const payload = { name: values.name.trim(), endpoint: values.endpoint.trim(), model: values.model.trim(), ...(key ? { apiKey: key } : {}) }
+    try {
+      const result = editing ? await adminApi.updateProvider(provider.id, payload) : await adminApi.createProvider(payload)
+      form.elements.apiKey.value = ''
+      onSaved(result.provider, editing ? 'Provider 配置已更新。' : 'Provider 已创建，默认处于停用状态。')
+    } catch (error) {
+      form.elements.apiKey.value = ''
+      setFields(error instanceof ApiError ? error.fields : {})
+      setMessage(messageFor(error))
+    } finally { setBusy(false) }
+  }
+  const field = (name, label, placeholder) => <label><span>{label}</span><input value={values[name]} onChange={(event) => setValues({ ...values, [name]: event.target.value })} placeholder={placeholder} aria-invalid={Boolean(fields[name])} aria-describedby={fields[name] ? `${name}-error` : undefined} /><small id={`${name}-error`}>{fields[name]}</small></label>
+  return <div className="backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="form-title">
+    <header className="dialog-header"><div><span className="kicker">{editing ? '配置维护' : '接入配置'}</span><h2 id="form-title">{editing ? '编辑 Provider' : '新建 Provider'}</h2></div><button className="icon-button" type="button" onClick={onClose} aria-label="关闭表单"><X size={19} /></button></header>
+    <form className="provider-form" onSubmit={submit}>
+      {field('name', '名称', 'render-api')}{field('endpoint', 'API 端点', 'https://provider.example/v1')}{field('model', '模型', 'interior-v1')}
+      <label><span>{editing ? '轮换密钥（可选）' : 'API 密钥'}</span><input name="apiKey" type="password" autoComplete="new-password" placeholder={editing ? '留空则保持现有密钥' : '仅用于本次保存'} aria-invalid={Boolean(fields.apiKey)} aria-describedby="key-help" /><small id="key-help">{fields.apiKey || (editing ? '现有密钥不会回填；输入新值即完成轮换。' : '保存后页面不会显示或回填密钥。')}</small></label>
+      {message && <Alert kind="error">{message}</Alert>}
+      <div className="dialog-actions"><button className="text-button" type="button" onClick={onClose}>取消</button><button className="primary-button compact" type="submit" disabled={busy}>{busy && <RefreshCw className="spin" size={17} />}{busy ? '保存中' : '保存配置'}</button></div>
+    </form>
+  </section></div>
+}
+
+function Audit({ provider, onClose }) {
+  const [state, setState] = useState({ loading: true, entries: [], error: '' })
+  useEffect(() => {
+    let active = true
+    adminApi.listAudit(provider.id).then((result) => active && setState({ loading: false, entries: result.audit, error: '' })).catch((error) => active && setState({ loading: false, entries: [], error: messageFor(error) }))
+    return () => { active = false }
+  }, [provider.id])
+  const names = { created: '创建配置', updated: '更新配置', enabled: '启用服务', disabled: '停用服务' }
+  return <div className="backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="dialog audit-panel" role="dialog" aria-modal="true" aria-labelledby="audit-title">
+    <header className="dialog-header"><div><span className="kicker">脱敏操作记录</span><h2 id="audit-title">{provider.name} · 审计</h2></div><button className="icon-button" type="button" onClick={onClose} aria-label="关闭审计记录"><X size={19} /></button></header>
+    {state.loading && <div className="loading-row" role="status"><RefreshCw className="spin" size={18} />正在读取审计记录</div>}
+    {state.error && <Alert kind="error">{state.error}</Alert>}
+    {!state.loading && !state.error && !state.entries.length && <div className="empty-mini">暂无审计记录</div>}
+    <ol className="audit-list">{state.entries.map((entry) => <li key={entry.id}><span className="audit-dot" /><div><strong>{names[entry.action] || entry.action}</strong><small>{formatTime(entry.occurredAt)}</small></div></li>)}</ol>
+    <p className="security-note"><ShieldCheck size={16} />审计记录不包含 API 密钥。</p>
+  </section></div>
+}
+
+function Console({ user, initialProviders, onLogout }) {
+  const [providers, setProviders] = useState(initialProviders)
+  const [dialog, setDialog] = useState(null)
+  const [notice, setNotice] = useState('')
+  const [error, setError] = useState('')
+  const [busyId, setBusyId] = useState('')
+  async function refresh() {
+    setError('')
+    try { setProviders((await adminApi.listProviders()).providers) } catch (errorValue) { setError(messageFor(errorValue)) }
+  }
+  function saved(provider, text) {
+    setProviders((current) => current.some((item) => item.id === provider.id) ? current.map((item) => item.id === provider.id ? provider : item) : [provider, ...current])
+    setDialog(null); setNotice(text)
+  }
+  async function toggle(provider) {
+    setBusyId(provider.id); setError('')
+    try {
+      const result = await adminApi.setProviderEnabled(provider.id, !provider.enabled)
+      setProviders((current) => current.map((item) => item.id === provider.id ? result.provider : item))
+      setNotice(`${provider.name} 已${result.provider.enabled ? '启用' : '停用'}。`)
+    } catch (errorValue) { setError(messageFor(errorValue)) } finally { setBusyId('') }
+  }
+  return <main className="admin-shell">
+    <header className="topbar"><Brand /><div className="account"><span><ShieldCheck size={15} />{user.email}</span><button className="icon-button" onClick={onLogout} aria-label="退出管理员账号" title="退出"><LogOut size={18} /></button></div></header>
+    <section className="console-heading"><div><span className="kicker"><Activity size={15} />系统配置</span><h1>Provider 管理</h1><p>维护生成服务的连接配置与运行状态。</p></div><button className="primary-button add-button" onClick={() => setDialog({ type: 'form' })}><Plus size={18} />新建 Provider</button></section>
+    <section className="summary" aria-label="Provider 概览"><div><small>全部配置</small><strong>{providers.length}</strong></div><div><small>已启用</small><strong>{providers.filter((item) => item.enabled).length}</strong></div><div><small>密钥已配置</small><strong>{providers.filter((item) => item.apiKeyConfigured).length}</strong></div></section>
+    <div className="status-region" aria-live="polite">{notice && <Alert kind="success" action={<button onClick={() => setNotice('')} aria-label="关闭成功消息"><X size={15} /></button>}>{notice}</Alert>}{error && <Alert kind="error" action={<button onClick={refresh}>重试</button>}>{error}</Alert>}</div>
+    <section className="provider-section">
+      <header className="section-heading"><div><h2>连接配置</h2><p>密钥始终以脱敏状态呈现。</p></div><button className="icon-button" onClick={refresh} aria-label="刷新 Provider 列表" title="刷新"><RefreshCw size={18} /></button></header>
+      {!providers.length ? <div className="empty-state"><span><ServerCog size={28} /></span><h3>尚未配置 Provider</h3><p>创建第一条连接配置。新配置默认停用。</p><button className="secondary-button" onClick={() => setDialog({ type: 'form' })}><Plus size={17} />新建 Provider</button></div> :
+      <div className="provider-list">{providers.map((provider) => <article className="provider-row" key={provider.id}>
+        <div className="provider-main"><span className={provider.enabled ? 'status-dot enabled' : 'status-dot'} /><div><div className="provider-title"><h3>{provider.name}</h3><span className={provider.enabled ? 'badge enabled' : 'badge'}>{provider.enabled ? '已启用' : '已停用'}</span></div><p>{provider.endpoint}</p></div></div>
+        <dl><div><dt>模型</dt><dd>{provider.model}</dd></div><div><dt>密钥</dt><dd>{provider.apiKeyConfigured ? provider.apiKeyMasked : '未配置'}</dd></div><div><dt>更新时间</dt><dd>{formatTime(provider.updatedAt)}</dd></div></dl>
+        <div className="actions"><button className="text-button" onClick={() => setDialog({ type: 'audit', provider })}><Activity size={16} />审计</button><button className="text-button" onClick={() => setDialog({ type: 'form', provider })}><Pencil size={16} />编辑</button><button className={provider.enabled ? 'toggle enabled' : 'toggle'} aria-pressed={provider.enabled} disabled={busyId === provider.id} onClick={() => toggle(provider)}><span />{busyId === provider.id ? '处理中' : provider.enabled ? '停用' : '启用'}</button></div>
+      </article>)}</div>}
+    </section>
+    <footer><span><ShieldCheck size={15} />权限与密钥由服务器端保护</span><span>当前为本地内存环境</span></footer>
+    {dialog?.type === 'form' && <ProviderForm provider={dialog.provider} onClose={() => setDialog(null)} onSaved={saved} />}
+    {dialog?.type === 'audit' && <Audit provider={dialog.provider} onClose={() => setDialog(null)} />}
+  </main>
 }
 
 function App() {
-  const [theme, setTheme] = useState(themes[0])
-  const [room, setRoom] = useState(rooms[0])
-  const [scale, setScale] = useState(scales[1])
-  const [preferences, setPreferences] = useState({ layout: true, storage: true, light: false })
-  const [fileName, setFileName] = useState('')
-  const [status, setStatus] = useState('empty')
-  const [comparePosition, setComparePosition] = useState(50)
-  const inputRef = useRef(null)
-
-  const togglePreference = (key) => {
-    setPreferences((current) => ({ ...current, [key]: !current[key] }))
-  }
-
-  const handleFile = (event) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-    setFileName(file.name)
-    setStatus('ready')
-  }
-
-  const generate = () => {
-    if (!fileName) {
-      setStatus('missing')
-      return
+  const [state, setState] = useState({ view: 'loading' })
+  async function establish(user) {
+    try {
+      const result = await adminApi.listProviders()
+      setState({ view: 'console', user, providers: result.providers })
+    } catch (error) {
+      setState(error.status === 403 ? { view: 'forbidden', user } : { view: 'login' })
     }
-    setStatus('generating')
-    window.setTimeout(() => setStatus('success'), 900)
   }
-
-  const statusCopy = {
-    empty: '上传一张房间照片，开始你的空间设计',
-    ready: '照片已准备好，可以生成设计',
-    missing: '请先上传一张 JPEG 或 PNG 房间照片',
-    generating: '正在为你的空间构思方案…',
-    success: '设计方案已生成，可以查看对比',
+  useEffect(() => {
+    let active = true
+    adminApi.session().then((result) => active && establish(result.user)).catch(() => active && setState({ view: 'login' }))
+    return () => { active = false }
+  }, [])
+  async function logout() {
+    try { await adminApi.logout() } finally { setState({ view: 'login' }) }
   }
-
-  return (
-    <main className="app-shell">
-      <header className="topbar">
-        <a className="brand" href="#top" aria-label="AI 室内设计师首页">
-          <span className="brand-mark"><Sparkles size={20} /></span>
-          <span><strong>AI 室内设计师</strong><small>让空间更像你</small></span>
-        </a>
-        <nav className="topnav" aria-label="主导航">
-          <a className="active" href="#studio">设计工作台</a>
-          <a href="#works"><FolderHeart size={16} />我的作品</a>
-          <a href="#credits"><span className="credit-dot">3</span>剩余次数</a>
-        </nav>
-        <button className="account-button" type="button"><span className="avatar">林</span><span>林小姐</span><ChevronDown size={16} /></button>
-      </header>
-
-      <section className="intro" id="top">
-        <div>
-          <p className="eyebrow"><WandSparkles size={16} /> DESIGN STUDIO</p>
-          <h1>把房间变成<br /><em>喜欢的样子。</em></h1>
-          <p className="intro-copy">上传一张真实房间照片，选择你的偏好，得到一个可以反复比较的设计方案。</p>
-        </div>
-        <div className="usage-note"><Info size={18} /><span>新用户赠送 3 次设计<br /><small>生成失败不会扣除次数</small></span></div>
-      </section>
-
-      <section className="studio-grid" id="studio">
-        <aside className="control-panel clay-surface">
-          <div className="panel-heading"><div><span className="section-kicker">01 / 设计参数</span><h2>告诉我你的想法</h2></div><BookOpen size={21} /></div>
-          <div className="fields">
-            <SelectField label="空间类型" value={room} options={rooms} onChange={setRoom} />
-            <SelectField label="设计风格" value={theme} options={themes} onChange={setTheme} />
-            <div className="field"><span>改造强度</span><div className="scale-options">{scales.map((option) => <button key={option} className={scale === option ? 'selected' : ''} type="button" aria-pressed={scale === option} onClick={() => setScale(option)}>{option}</button>)}</div></div>
-            <div className="field"><span>固定偏好 <small>可选</small></span><div className="preference-list">
-              <button className={preferences.layout ? 'preference checked' : 'preference'} type="button" aria-pressed={preferences.layout} onClick={() => togglePreference('layout')}><span>{preferences.layout && <Check size={14} />}</span>尽量保留原有布局</button>
-              <button className={preferences.storage ? 'preference checked' : 'preference'} type="button" aria-pressed={preferences.storage} onClick={() => togglePreference('storage')}><span>{preferences.storage && <Check size={14} />}</span>增加实用收纳</button>
-              <button className={preferences.light ? 'preference checked' : 'preference'} type="button" aria-pressed={preferences.light} onClick={() => togglePreference('light')}><span>{preferences.light && <Check size={14} />}</span>让空间更明亮</button>
-            </div></div>
-          </div>
-          <button className="primary-button" type="button" onClick={generate}><WandSparkles size={18} />生成设计 <span>· 1 次</span></button>
-          <p className="panel-footnote">每次生成只消耗 1 次额度，设计失败不会扣除。</p>
-        </aside>
-
-        <section className="workspace-panel" aria-live="polite">
-          <div className="workspace-heading"><div><span className="section-kicker">02 / 设计结果</span><h2>{room} · {theme}</h2></div><span className="state-label">{statusCopy[status]}</span></div>
-          <div className="image-grid">
-            <div className="image-stage original-stage">
-              <span className="image-label">原始照片</span>
-              {fileName ? <div className="uploaded-scene"><ImagePlus size={34} /><strong>{fileName}</strong><small>已上传，等待生成</small></div> : <button className="upload-prompt" type="button" onClick={() => inputRef.current?.click()}><span className="upload-icon"><ImagePlus size={25} /></span><strong>上传房间照片</strong><small>支持 JPEG、PNG，建议小于 10MB</small><span className="upload-action">点击选择文件</span></button>}
-            </div>
-            <div className={status === 'success' ? 'image-stage result-stage has-result' : 'image-stage result-stage'}>
-              <span className="image-label">AI 设计效果</span>
-              {status === 'success' ? <div className="result-scene"><div className="result-room"><span>AI 设计预览</span><div className="result-sofa" /><div className="result-table" /><div className="result-plant" /></div><small>现代简约 · 均衡改造</small></div> : <div className="result-empty"><Sparkles size={30} /><span>{status === 'generating' ? '正在生成…' : '生成后将在这里展示'}</span></div>}
-            </div>
-          </div>
-          <input ref={inputRef} className="visually-hidden" type="file" accept="image/jpeg,image/png" onChange={handleFile} />
-          {status === 'success' && <div className="compare-bar"><span>原图</span><div className="compare-track"><span /></div><span>效果图</span></div>}
-          {status === 'success' && <div className="comparison-block">
-            <div className="comparison-heading"><div><span className="section-kicker">03 / 效果对比</span><h3>左右拖动，看看空间的变化</h3></div><span>{comparePosition}% 效果图</span></div>
-            <div className="comparison-stage">
-              <div className="comparison-before"><span className="comparison-label">生成之前</span><div className="comparison-room before-room"><div className="comparison-window" /><div className="comparison-chair" /><div className="comparison-box" /></div></div>
-              <div className="comparison-after" style={{ width: `${comparePosition}%` }}><span className="comparison-label">生成之后</span><div className="comparison-room after-room"><div className="comparison-window" /><div className="comparison-sofa" /><div className="comparison-plant" /></div></div>
-              <div className="comparison-divider" style={{ left: `${comparePosition}%` }} aria-hidden="true"><span /></div>
-              <label className="visually-hidden" htmlFor="comparison-range">调整原图和效果图的分界位置</label>
-              <input id="comparison-range" className="comparison-range" type="range" min="0" max="100" value={comparePosition} aria-valuetext={`${comparePosition}% 效果图`} onChange={(event) => setComparePosition(Number(event.target.value))} />
-            </div>
-          </div>}
-          <div className="workspace-actions"><button className="secondary-button" type="button" onClick={() => inputRef.current?.click()}><ImagePlus size={17} />{fileName ? '更换照片' : '选择照片'}</button><button className="secondary-button" type="button" disabled={status !== 'success'}><Download size={17} />下载结果</button><button className="secondary-button" type="button" disabled={status !== 'success'}><FolderHeart size={17} />保存作品</button></div>
-        </section>
-      </section>
-
-      <footer className="page-footer"><span>AI 生成结果仅供设计灵感参考</span><span>隐私说明 · 帮助中心</span></footer>
-    </main>
-  )
+  if (state.view === 'loading') return <main className="loading-screen" role="status"><RefreshCw className="spin" size={22} />正在恢复管理员会话</main>
+  if (state.view === 'forbidden') return <Forbidden email={state.user.email} onLogout={logout} />
+  if (state.view === 'console') return <Console user={state.user} initialProviders={state.providers} onLogout={logout} />
+  return <Login onAuthenticated={establish} />
 }
 
 export default App
