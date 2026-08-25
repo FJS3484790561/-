@@ -121,10 +121,16 @@ const MIGRATIONS = [
   },
 ]
 
-function applyMigrations(database) {
+const LATEST_SCHEMA_VERSION = MIGRATIONS.at(-1).version
+
+function applyMigrations(database, targetVersion = LATEST_SCHEMA_VERSION) {
+  if (!Number.isInteger(targetVersion) || targetVersion < 1 || targetVersion > LATEST_SCHEMA_VERSION) {
+    throw new Error(`Unsupported SQLite schema target version: ${targetVersion}`)
+  }
   database.exec('CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL)')
   const applied = new Set(database.prepare('SELECT version FROM schema_migrations').all().map((row) => row.version))
   for (const migration of MIGRATIONS) {
+    if (migration.version > targetVersion) break
     if (applied.has(migration.version)) continue
     database.transaction(() => {
       database.exec(migration.sql)
@@ -134,7 +140,7 @@ function applyMigrations(database) {
   }
 }
 
-export function openSqliteDatabase({ filename, readonly = false } = {}) {
+export function openSqliteDatabase({ filename, readonly = false, targetVersion = LATEST_SCHEMA_VERSION } = {}) {
   if (!filename) throw new Error('SQLite filename is required')
   const absolute = resolve(filename)
   if (!readonly) mkdirSync(dirname(absolute), { recursive: true })
@@ -144,7 +150,7 @@ export function openSqliteDatabase({ filename, readonly = false } = {}) {
   if (!readonly) {
     database.pragma('journal_mode = WAL')
     database.pragma('synchronous = FULL')
-    applyMigrations(database)
+    applyMigrations(database, targetVersion)
   }
   return database
 }
@@ -225,4 +231,4 @@ export async function backupSqliteDatabase(database, destination) {
   }
 }
 
-export const sqliteSchemaVersion = MIGRATIONS.at(-1).version
+export const sqliteSchemaVersion = LATEST_SCHEMA_VERSION

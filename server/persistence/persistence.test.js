@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
+import { Worker } from 'node:worker_threads'
 import { createAppRuntime } from '../app-runtime.js'
 import { backupSqliteDatabase, openSqliteDatabase, verifySqliteDatabase } from './sqlite-database.js'
 import { LocalObjectStorage, TencentCosObjectStorage } from './object-storage.js'
@@ -28,6 +29,38 @@ async function registerAndLogin(runtime, email, password = 'password123') {
   const login = await runtime.authService.login({ email, password })
   assert.equal(login.ok, true)
   return login
+}
+
+function waitForWorkerMessage(worker, expectedType) {
+  return new Promise((resolve, reject) => {
+    const onMessage = (message) => {
+      if (message.type === 'error') {
+        cleanup()
+        reject(new Error(message.message))
+      } else if (message.type === expectedType) {
+        cleanup()
+        resolve(message)
+      }
+    }
+    const onError = (error) => {
+      cleanup()
+      reject(error)
+    }
+    const onExit = (code) => {
+      if (code !== 0) {
+        cleanup()
+        reject(new Error(`SQLite concurrency worker exited with code ${code}`))
+      }
+    }
+    const cleanup = () => {
+      worker.off('message', onMessage)
+      worker.off('error', onError)
+      worker.off('exit', onExit)
+    }
+    worker.on('message', onMessage)
+    worker.on('error', onError)
+    worker.on('exit', onExit)
+  })
 }
 
 test('persists accounts, sessions, credits, orders, generations, works and provider configuration across a real reopen', async (context) => {
@@ -162,17 +195,28 @@ test('serializes idempotent grants across two SQLite connections', async (contex
   const firstStores = createSqliteStores({ filename })
   const firstRuntime = runtimeFor(firstStores)
   const login = await registerAndLogin(firstRuntime, 'concurrent-grant@example.com')
-  const secondStores = createSqliteStores({ filename })
-  const secondRuntime = runtimeFor(secondStores)
-  const grants = await Promise.all([
-    Promise.resolve(firstRuntime.creditLedger.grantForUser({ userId: login.user.id, amount: 12, source: 'payment:shared', idempotencyKey: 'payment:shared' })),
-    Promise.resolve(secondRuntime.creditLedger.grantForUser({ userId: login.user.id, amount: 12, source: 'payment:shared', idempotencyKey: 'payment:shared' })),
-  ])
+  const controlBuffer = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT * 2)
+  const control = new Int32Array(controlBuffer)
+  const workerUrl = new URL('./concurrent-grant.worker.js', import.meta.url)
+  const holder = new Worker(workerUrl, { workerData: { role: 'holder', filename, userId: login.user.id, control: controlBuffer } })
+  const contender = new Worker(workerUrl, { workerData: { role: 'contender', filename, userId: login.user.id, control: controlBuffer } })
+  context.after(async () => Promise.allSettled([holder.terminate(), contender.terminate()]))
+  const holderResult = waitForWorkerMessage(holder, 'result')
+  const contenderResult = waitForWorkerMessage(contender, 'result')
+  await Promise.all([waitForWorkerMessage(holder, 'lock-held'), waitForWorkerMessage(contender, 'ready')])
+  Atomics.store(control, 1, 1)
+  Atomics.notify(control, 1)
+  await waitForWorkerMessage(contender, 'grant-started')
+  await new Promise((resolve) => setTimeout(resolve, 100))
+  Atomics.store(control, 0, 1)
+  Atomics.notify(control, 0)
+  const workerResults = await Promise.all([holderResult, contenderResult])
+  const grants = workerResults.map(({ result }) => result)
   assert.equal(grants.every((grant) => grant.ok), true)
   assert.equal(new Set(grants.map((grant) => grant.lot.id)).size, 1)
+  assert.ok(workerResults.find(({ role }) => role === 'contender').elapsedMs >= 75, 'contending writer should wait for the held SQLite write lock')
   assert.equal(firstStores.database.prepare("SELECT COUNT(*) AS count FROM credit_operations WHERE idempotency_key = 'payment:shared'").get().count, 1)
   assert.equal(firstRuntime.creditLedger.getBalanceForUser({ userId: login.user.id }).available, 15)
-  secondRuntime.close()
   firstRuntime.close()
 })
 
@@ -267,6 +311,29 @@ test('reapplying migrations is idempotent and preserves the credit journal', asy
     assert.equal(verifySqliteDatabase(stores.database).ok, true)
     stores.close()
   }
+})
+
+test('upgrades a populated v1 credit database and backfills its journal', async (context) => {
+  const root = await mkdtemp(join(tmpdir(), 'interior-v1-migration-'))
+  context.after(() => rm(root, { recursive: true, force: true }))
+  const filename = join(root, 'app.sqlite')
+  const user = { id: 'user_v1', email: 'v1@example.com' }
+  const lot = { id: 'lot_v1', userId: user.id, amount: 5, consumed: 2, reserved: 0, source: 'legacy', createdAt: 100, expiresAt: null }
+  const reservation = { id: 'reservation_v1', userId: user.id, amount: 2, allocations: [{ lotId: lot.id, quantity: 2 }], status: 'settled', createdAt: 200, settledAt: 300 }
+  const v1 = openSqliteDatabase({ filename, targetVersion: 1 })
+  v1.prepare('INSERT INTO app_users (email, entity_id, value_json) VALUES (?, ?, ?)').run(user.email, user.id, JSON.stringify(user))
+  v1.prepare('INSERT INTO initialized_credit_users (user_id) VALUES (?)').run(user.id)
+  v1.prepare('INSERT INTO credit_lot_groups (user_id, value_json) VALUES (?, ?)').run(user.id, JSON.stringify([lot]))
+  v1.prepare('INSERT INTO credit_reservations (reservation_id, user_id, value_json) VALUES (?, ?, ?)').run(reservation.id, user.id, JSON.stringify(reservation))
+  v1.prepare('INSERT INTO credit_operations (operation_key, reservation_id, value_json) VALUES (?, ?, ?)').run('legacy-reserve', reservation.id, JSON.stringify(reservation))
+  v1.close()
+
+  const upgraded = openSqliteDatabase({ filename })
+  assert.deepEqual(upgraded.prepare('SELECT version FROM schema_migrations ORDER BY version').all().map((row) => row.version), [1, 2])
+  assert.deepEqual(upgraded.prepare('SELECT operation_type FROM credit_operations ORDER BY occurred_at').all().map((row) => row.operation_type), ['grant', 'reserve', 'settle'])
+  assert.equal(upgraded.prepare('SELECT COUNT(*) AS count FROM credit_reservation_operations').get().count, 1)
+  assert.equal(verifySqliteDatabase(upgraded).ok, true)
+  upgraded.close()
 })
 
 test('rejects incomplete production persistence configuration instead of falling back to memory', async (context) => {
