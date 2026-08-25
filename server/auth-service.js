@@ -64,6 +64,7 @@ export class AuthService {
   }
 
   getSession(sessionToken) {
+    if (typeof sessionToken !== 'string' || sessionToken.length === 0) return null
     const session = this.store.sessions.get(digest(sessionToken))
     if (!session || session.expiresAt <= this.clock()) return null
     const user = [...this.store.users.values()].find((candidate) => candidate.id === session.userId)
