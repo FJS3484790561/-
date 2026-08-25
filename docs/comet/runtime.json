@@ -1,6 +1,6 @@
 {
   "workflow_version": "4.0",
-  "state_revision": 1,
+  "state_revision": 9,
   "project": {
     "name": "AI室内设计师",
     "status": "active"
@@ -51,18 +51,83 @@
     }
   },
   "approvals": {
-    "project_discovery": false,
-    "baseline": false,
-    "surface_map": false,
-    "project_spec": false,
-    "architecture": false,
-    "roadmap": false,
-    "ui_style": null,
-    "ui_lock": null,
+    "project_discovery": true,
+    "baseline": true,
+    "surface_map": true,
+    "project_spec": true,
+    "architecture": true,
+    "roadmap": true,
+    "ui_style": true,
+    "ui_lock": true,
     "comet_handoff": false,
     "release": false
   },
-  "approval_receipts": {},
+  "approval_receipts": {
+    "project_spec": {
+      "artifact": "docs/PROJECT_SPEC.md",
+      "artifact_sha256": "ca8d097efdcf39c67c82653dde5fa977db5aa7e2aebeb2ce52302c284bad1f8a",
+      "confirmation_source": "explicit_user_confirmation",
+      "confirmation_text": "批准设计规格，进入 UI Lock、架构确认和 Comet handoff 准备阶段。",
+      "confirmed_at": "2026-08-24T19:48:19+00:00",
+      "recorded_by": "advance-state"
+    },
+    "ui_lock": {
+      "artifact": "docs/design/UI_LOCK.md",
+      "artifact_sha256": "1637c631942f5b3bc59105b667bed60efbb89abd4fb48df8755b828e225101c0",
+      "confirmation_source": "explicit_user_confirmation",
+      "confirmation_text": "批准 UI Lock 和架构。",
+      "confirmed_at": "2026-08-24T19:50:06+00:00",
+      "recorded_by": "advance-state"
+    },
+    "architecture": {
+      "artifact": "docs/architecture/ARCHITECTURE.md",
+      "artifact_sha256": "c3500f5505e7442b51281c7e7cdb85452c7991e7aceea1e9c6a1890d6dee5afc",
+      "confirmation_source": "explicit_user_confirmation",
+      "confirmation_text": "批准 UI Lock 和架构。",
+      "confirmed_at": "2026-08-24T19:50:06+00:00",
+      "recorded_by": "advance-state"
+    },
+    "baseline": {
+      "artifact": "docs/baseline/BASELINE_DECISION.md",
+      "artifact_sha256": "ad0b798ed0444ebc89bab74e8c03f735da946438c59675d15897126f0344fb37",
+      "confirmation_source": "explicit_user_confirmation",
+      "confirmation_text": "可以",
+      "confirmed_at": "2026-08-24T19:50:41+00:00",
+      "recorded_by": "advance-state"
+    },
+    "project_discovery": {
+      "artifact": "docs/PROJECT_DISCOVERY.md",
+      "artifact_sha256": "c8658aef36ce2ef130b267752bd5c03f1da9469d8f19c2861d7c0ca5ce208dd2",
+      "confirmation_source": "explicit_user_confirmation",
+      "confirmation_text": "批准项目发现、Surface Map、UI Style Brief 和 Roadmap，进入 Comet Native handoff 准备。",
+      "confirmed_at": "2026-08-24T19:51:41+00:00",
+      "recorded_by": "advance-state"
+    },
+    "surface_map": {
+      "artifact": "docs/SURFACE_MAP.md",
+      "artifact_sha256": "fcbe4f3e7ec1416ad65d19ee0d8c523f6e55fb398ef88607ec49ea4b74a1063f",
+      "confirmation_source": "explicit_user_confirmation",
+      "confirmation_text": "批准项目发现、Surface Map、UI Style Brief 和 Roadmap，进入 Comet Native handoff 准备。",
+      "confirmed_at": "2026-08-24T19:51:42+00:00",
+      "recorded_by": "advance-state"
+    },
+    "ui_style": {
+      "artifact": "docs/design/UI_STYLE_BRIEF.md",
+      "artifact_sha256": "bbd3d9d11f0f37be84ad6c5c692523067181493302990032ef372206966f3124",
+      "confirmation_source": "explicit_user_confirmation",
+      "confirmation_text": "批准项目发现、Surface Map、UI Style Brief 和 Roadmap，进入 Comet Native handoff 准备。",
+      "confirmed_at": "2026-08-24T19:51:42+00:00",
+      "recorded_by": "advance-state"
+    },
+    "roadmap": {
+      "artifact": "docs/comet/ROADMAP.md",
+      "artifact_sha256": "8cea9d68c8b5ea26bb828c0b63d3d6577e572535ed16ff61a8c4adc2241e53cb",
+      "confirmation_source": "explicit_user_confirmation",
+      "confirmation_text": "批准项目发现、Surface Map、UI Style Brief 和 Roadmap，进入 Comet Native handoff 准备。",
+      "confirmed_at": "2026-08-24T19:51:43+00:00",
+      "recorded_by": "advance-state"
+    }
+  },
   "surfaces": [],
   "baseline": {
     "kind": "undecided",
@@ -74,6 +139,6 @@
     "evidence": [],
     "checked_at": null
   },
-  "updated_at": "2026-08-24T18:39:15+00:00",
-  "updated_by": "init-project"
+  "updated_at": "2026-08-24T19:51:43+00:00",
+  "updated_by": "advance-state"
 }

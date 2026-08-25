@@ -10,5 +10,4 @@ SURFACE_MAP_STATUS: DRAFT
 
 DECISION: User and admin are separate web experiences; API is the server runtime boundary. User confirmed scope; architecture remains proposed.
 
-SURFACE_MAP_APPROVED: NO
-
+SURFACE_MAP_APPROVED: YES

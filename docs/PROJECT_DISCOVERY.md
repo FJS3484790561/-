@@ -25,5 +25,4 @@ PROJECT_DISCOVERY_STATUS: DRAFT
 - FACT: Payment, privacy, content and retention duties depend on jurisdiction/providers; review before launch.
 - IMPLEMENTATION_CHOICE: Current Vite screen is prototype-only and uses mock generation.
 
-PROJECT_DISCOVERY_APPROVED: NO
-
+PROJECT_DISCOVERY_APPROVED: YES

@@ -1,7 +1,7 @@
 # Project Specification
 
 PROJECT_SPEC_STATUS: DRAFT
-PROJECT_SPEC_APPROVED: NO
+PROJECT_SPEC_APPROVED: YES
 
 ## Confirmed scope
 - Email/password auth and email password reset.
@@ -23,4 +23,3 @@ Custom prompt, camera capture, batch generation, subscriptions, promotions, team
 
 ## Evidence boundary
 Current React + Vite UI is prototype-only and not production acceptance evidence.
-

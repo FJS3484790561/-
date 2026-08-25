@@ -1,7 +1,7 @@
 # Roadmap
 
 ROADMAP_STATUS: DRAFT
-ROADMAP_APPROVED: NO
+ROADMAP_APPROVED: YES
 COMET_HANDOFF_APPROVED: NO
 
 | Change ID | Goal | Dependencies | Acceptance / evidence |
@@ -14,4 +14,3 @@ COMET_HANDOFF_APPROVED: NO
 | change-006 | Cross-surface QA and release readiness | all | Responsive, accessibility, security, build evidence |
 
 Proposed only; Comet handoff requires explicit user approval after all gates.
-

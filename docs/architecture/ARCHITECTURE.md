@@ -1,7 +1,7 @@
 # Architecture
 
 ARCHITECTURE_STATUS: DRAFT
-ARCHITECTURE_APPROVED: NO
+ARCHITECTURE_APPROVED: YES
 
 ## Runtime and modules
 - IMPLEMENTATION_CHOICE: React + Vite prototype; production framework/runtime remains to be approved with Comet Change.
@@ -18,4 +18,3 @@ Encrypt provider secrets; use short-lived HttpOnly SameSite sessions; redact log
 
 ## Prototype boundary
 Current Vite app has no authoritative auth, credit, payment, provider, or persistence behavior.
-

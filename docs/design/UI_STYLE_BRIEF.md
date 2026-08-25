@@ -17,4 +17,3 @@ Local prototype: http://localhost:5173/
 Prototype files: src/App.jsx and src/styles.css
 
 UI_LOCK_APPROVED: NO
-

@@ -11,5 +11,4 @@ DESIGN_SYSTEM_STATUS: DRAFT
 - Components: app shell, nav, select, segmented strength, preference checkbox, upload/result stage, comparison slider, action button, credit notice, status message.
 - Accessibility: visible focus, keyboard operation, no color-only status, responsive 320-390px support.
 
-DESIGN_SYSTEM_APPROVED: NO
-
+DESIGN_SYSTEM_APPROVED: YES
