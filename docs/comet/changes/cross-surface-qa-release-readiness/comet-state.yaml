@@ -1,0 +1,107 @@
+schema: comet.native.v4
+name: cross-surface-qa-release-readiness
+language: zh-CN
+phase: build
+status: active
+state_version: 7
+brief: brief.md
+children_contract_hash: 2d5187fd848cfe82e3a336d73cef503e4fe881fafbf81c87418c68e8e5d74385
+spec_changes: []
+workspace:
+  isolation: branch
+  change_branch: comet/cross-surface-qa-release-readiness
+  target_branch: master
+  finish: null
+loop:
+  stage: building
+  goal_cycle: 2
+  iteration: 1
+  attempt: 0
+  retry_epoch: 0
+  failed_iteration_count: 0
+  no_progress_count: 0
+  execution_failure_count: 0
+  previous_unresolved_ids: []
+  next_action: submit-builder-candidate
+acceptance:
+  - id: A1
+    source: brief.md
+    text: "A1: 核心用户流程可从认证进入工作台，完成参数选择、生成模拟、前后对比，并访问作品和额度入口；不存在阻断性页面错误。"
+    result: pending
+    reason: null
+  - id: A2
+    source: brief.md
+    text: "A2: 生成结果的前后对比控件可通过指针和键盘操作，左右两侧标签清晰且不会互相遮挡。"
+    result: pending
+    reason: null
+  - id: A3
+    source: brief.md
+    text: "A3: 关键页面在桌面和移动视口下无横向溢出、文字裁切或主要控件重叠。"
+    result: pending
+    reason: null
+  - id: A4
+    source: brief.md
+    text: "A4: 交互控件具有可见焦点，关键表单与按钮具备可理解的名称，页面不存在自动化可访问性检查发现的严重问题。"
+    result: pending
+    reason: null
+  - id: A5
+    source: brief.md
+    text: "A5: 未登录、普通用户和管理员边界符合现有服务约束；错误信息、公开响应和前端构建产物不包含测试密钥或敏感配置明文。"
+    result: pending
+    reason: null
+  - id: A6
+    source: brief.md
+    text: "A6: 自动化测试、lint、build 和 typecheck/语法检查全部通过，失败项必须记录原因而不能静默忽略。"
+    result: pending
+    reason: null
+  - id: A7
+    source: brief.md
+    text: "A7: 上线准备报告明确区分已就绪能力和未完成的生产数据库、服务器、域名、真实支付、真实 Provider、邮件服务及密钥管理工作。"
+    result: pending
+    reason: null
+  - id: A8
+    source: brief.md
+    text: "A8: 本 Change 不执行部署、远程推送、域名配置、真实支付交易或生产凭据写入。"
+    result: pending
+    reason: null
+builder_handoff: null
+blockers: []
+verification: null
+history:
+  - goal_cycle: 1
+    iteration: 1
+    attempt: 1
+    outcome: fail
+    unresolved_ids:
+      - A1
+      - A3
+      - A4
+      - A5
+    summary:
+      text: 验收失败。A2、A6、A7、A8 通过；A1、A3、A4、A5 因关键浏览器 Surface、HTTP
+        集成及完整跨页面权限/响应式/可访问性证据缺失而失败。上线准备报告的诚实披露满足 A7，但不能使被披露为缺失的功能通过其他验收项。
+      truncated: false
+    completed_at: 2026-08-25T05:40:58.758Z
+  - goal_cycle: 1
+    iteration: 2
+    attempt: 0
+    outcome: recovery
+    unresolved_ids: []
+    summary:
+      text: Native child declarations changed
+      truncated: false
+    completed_at: 2026-08-25T05:44:16.205Z
+history_overflow:
+  dropped_entries: 0
+  first_dropped_at: null
+  last_dropped_at: null
+  outcome_counts:
+    pass: 0
+    fail: 0
+    blocked: 0
+    execution-error: 0
+    recovery: 0
+verification_result: pending
+verification_report: null
+archived: false
+created_at: 2026-08-25T05:22:08.212Z

@@ -97,11 +97,11 @@ function App() {
           <div className="fields">
             <SelectField label="空间类型" value={room} options={rooms} onChange={setRoom} />
             <SelectField label="设计风格" value={theme} options={themes} onChange={setTheme} />
-            <div className="field"><span>改造强度</span><div className="scale-options">{scales.map((option) => <button key={option} className={scale === option ? 'selected' : ''} type="button" onClick={() => setScale(option)}>{option}</button>)}</div></div>
+            <div className="field"><span>改造强度</span><div className="scale-options">{scales.map((option) => <button key={option} className={scale === option ? 'selected' : ''} type="button" aria-pressed={scale === option} onClick={() => setScale(option)}>{option}</button>)}</div></div>
             <div className="field"><span>固定偏好 <small>可选</small></span><div className="preference-list">
-              <button className={preferences.layout ? 'preference checked' : 'preference'} type="button" onClick={() => togglePreference('layout')}><span>{preferences.layout && <Check size={14} />}</span>尽量保留原有布局</button>
-              <button className={preferences.storage ? 'preference checked' : 'preference'} type="button" onClick={() => togglePreference('storage')}><span>{preferences.storage && <Check size={14} />}</span>增加实用收纳</button>
-              <button className={preferences.light ? 'preference checked' : 'preference'} type="button" onClick={() => togglePreference('light')}><span>{preferences.light && <Check size={14} />}</span>让空间更明亮</button>
+              <button className={preferences.layout ? 'preference checked' : 'preference'} type="button" aria-pressed={preferences.layout} onClick={() => togglePreference('layout')}><span>{preferences.layout && <Check size={14} />}</span>尽量保留原有布局</button>
+              <button className={preferences.storage ? 'preference checked' : 'preference'} type="button" aria-pressed={preferences.storage} onClick={() => togglePreference('storage')}><span>{preferences.storage && <Check size={14} />}</span>增加实用收纳</button>
+              <button className={preferences.light ? 'preference checked' : 'preference'} type="button" aria-pressed={preferences.light} onClick={() => togglePreference('light')}><span>{preferences.light && <Check size={14} />}</span>让空间更明亮</button>
             </div></div>
           </div>
           <button className="primary-button" type="button" onClick={generate}><WandSparkles size={18} />生成设计 <span>· 1 次</span></button>
@@ -129,7 +129,7 @@ function App() {
               <div className="comparison-after" style={{ width: `${comparePosition}%` }}><span className="comparison-label">生成之后</span><div className="comparison-room after-room"><div className="comparison-window" /><div className="comparison-sofa" /><div className="comparison-plant" /></div></div>
               <div className="comparison-divider" style={{ left: `${comparePosition}%` }} aria-hidden="true"><span /></div>
               <label className="visually-hidden" htmlFor="comparison-range">调整原图和效果图的分界位置</label>
-              <input id="comparison-range" className="comparison-range" type="range" min="0" max="100" value={comparePosition} onChange={(event) => setComparePosition(event.target.value)} />
+              <input id="comparison-range" className="comparison-range" type="range" min="0" max="100" value={comparePosition} aria-valuetext={`${comparePosition}% 效果图`} onChange={(event) => setComparePosition(Number(event.target.value))} />
             </div>
           </div>}
           <div className="workspace-actions"><button className="secondary-button" type="button" onClick={() => inputRef.current?.click()}><ImagePlus size={17} />{fileName ? '更换照片' : '选择照片'}</button><button className="secondary-button" type="button" disabled={status !== 'success'}><Download size={17} />下载结果</button><button className="secondary-button" type="button" disabled={status !== 'success'}><FolderHeart size={17} />保存作品</button></div>
