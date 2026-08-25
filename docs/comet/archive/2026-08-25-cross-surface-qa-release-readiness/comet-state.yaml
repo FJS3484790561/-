@@ -2,8 +2,8 @@ schema: comet.native.v4
 name: cross-surface-qa-release-readiness
 language: zh-CN
 phase: archive
-status: active
-state_version: 14
+status: done
+state_version: 15
 brief: brief.md
 children_contract_hash: 2d5187fd848cfe82e3a336d73cef503e4fe881fafbf81c87418c68e8e5d74385
 spec_changes: []
@@ -13,7 +13,7 @@ workspace:
   target_branch: master
   finish: merge
 loop:
-  stage: archive-ready
+  stage: done
   goal_cycle: 2
   iteration: 1
   attempt: 2
@@ -22,7 +22,7 @@ loop:
   no_progress_count: 0
   execution_failure_count: 0
   previous_unresolved_ids: []
-  next_action: archive
+  next_action: null
 acceptance:
   - id: A1
     source: brief.md
@@ -281,5 +281,5 @@ history_overflow:
     recovery: 0
 verification_result: pass
 verification_report: verification.md
-archived: false
+archived: true
 created_at: 2026-08-25T05:22:08.212Z
