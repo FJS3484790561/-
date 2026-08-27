@@ -13,11 +13,11 @@ const config = {
 }
 const params = { room: '客厅', theme: '现代简约', scale: '均衡', preferences: { layout: true, light: true } }
 
-function fixture(fetchImpl, timeoutMs = 100) {
+function fixture(fetchImpl, timeoutMs = 100, providerConfig = config) {
   const logs = []
   const logger = { info: (...args) => logs.push(args), error: (...args) => logs.push(args) }
   const provider = configuredGenerationProvider({
-    adminProviderService: { getEnabledConfig: () => config },
+    adminProviderService: { getEnabledConfig: () => providerConfig },
     fallback: { generate: async () => ({}) },
     fetchImpl,
     logger,
@@ -49,6 +49,27 @@ test('uses the image edits multipart request once and returns a URL result', asy
   assert.deepEqual(result, { effectImage: { url: 'https://images.example.test/result.png', mimeType: 'image/png' } })
   assert.equal(JSON.stringify(data.logs).includes('super-secret-key'), false)
   assert.equal(JSON.stringify(data.logs).includes('private-original'), false)
+})
+
+test('uses duoyuanx JSON reference-image protocol for generation', async () => {
+  let request
+  const duoyuanConfig = { ok: true, provider: { ...config.provider, name: 'duoyuanx', endpoint: 'https://duoyuanx.com/v1/images/generations' } }
+  const original = Buffer.from('private-original')
+  const data = fixture(async (_url, options) => {
+    request = options
+    return new Response(JSON.stringify({ data: [{ url: 'https://images.example.test/result.png' }] }), { status: 200 })
+  }, 100, duoyuanConfig)
+  const result = await data.provider.generate({ image: { type: 'image/png', data: original }, params, traceId: 'generation_duoyuan' })
+  const body = JSON.parse(request.body)
+  assert.equal(request.headers['content-type'], 'application/json')
+  assert.equal(body.model, 'gpt-image-2')
+  assert.equal(body.image, original.toString('base64'))
+  assert.equal(body.size, '1024x1024')
+  assert.equal(body.n, 1)
+  assert.equal(body.response_format, 'url')
+  assert.match(body.prompt, /Preserve the original room geometry/u)
+  assert.deepEqual(result, { effectImage: { url: 'https://images.example.test/result.png', mimeType: 'image/png' } })
+  assert.equal(JSON.stringify(data.logs).includes(body.image), false)
 })
 
 test('supports base64 Images API output without logging image content', async () => {
@@ -109,4 +130,28 @@ test('save gate tests the same image edit multipart protocol with a safe fixture
   assert.equal(request.body.get('image').type, 'image/png')
   assert.match(request.body.get('prompt'), /preserving its geometry and camera viewpoint/u)
   assert.equal(JSON.stringify([...request.body.keys()]).includes('save-gate-secret'), false)
+})
+
+test('save gate uses duoyuanx JSON reference-image protocol', async () => {
+  const output = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64')
+  let request
+  const result = await testConfiguredProvider({
+    endpoint: 'https://duoyuanx.com/v1/images/generations',
+    model: 'gpt-image-2',
+    apiKey: 'duoyuan-save-gate-secret',
+    traceId: 'provider_test_duoyuan',
+    fetchImpl: async (_url, options) => {
+      request = options
+      return new Response(JSON.stringify({ data: [{ b64_json: output.toString('base64') }] }), { status: 200 })
+    },
+  })
+  assert.deepEqual(result, { ok: true, httpStatus: 200 })
+  const body = JSON.parse(request.body)
+  assert.equal(request.headers['content-type'], 'application/json')
+  assert.equal(body.model, 'gpt-image-2')
+  assert.equal(body.image, output.toString('base64'))
+  assert.equal(body.n, 1)
+  assert.equal(body.response_format, 'url')
+  assert.equal(JSON.stringify(request).includes('duoyuan-save-gate-secret'), true)
+  assert.equal(JSON.stringify(body).includes('duoyuan-save-gate-secret'), false)
 })

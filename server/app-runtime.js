@@ -48,6 +48,34 @@ function imageEditForm({ model, image, prompt }) {
   return form
 }
 
+function usesJsonReferenceImage(endpoint) {
+  try {
+    const url = new URL(endpoint)
+    return url.hostname.toLowerCase() === 'duoyuanx.com' && /\/v1\/images\/generations\/?$/u.test(url.pathname)
+  } catch {
+    return false
+  }
+}
+
+function imageProviderRequest({ endpoint, model, image, prompt, apiKey, traceId }) {
+  const headers = { accept: 'application/json', authorization: `Bearer ${apiKey}`, 'x-request-id': traceId }
+  if (usesJsonReferenceImage(endpoint)) {
+    headers['content-type'] = 'application/json'
+    return {
+      headers,
+      body: JSON.stringify({
+        model,
+        prompt,
+        image: Buffer.from(image.data).toString('base64'),
+        size: '1024x1024',
+        n: 1,
+        response_format: 'url',
+      }),
+    }
+  }
+  return { headers, body: imageEditForm({ model, image, prompt }) }
+}
+
 function diagnosticError(message, { code, stage, httpStatus } = {}) {
   const error = new Error(message)
   error.code = code
@@ -64,10 +92,10 @@ export function configuredGenerationProvider({ adminProviderService, fallback, f
       const provider = configured.provider
       logger.info?.('[Generation]', { traceId, stage: 'provider-request', provider: provider.name, model: provider.model })
       try {
+        const request = imageProviderRequest({ endpoint: provider.endpoint, model: provider.model, image, prompt: generationPrompt(params), apiKey: provider.apiKey, traceId })
         const response = await fetchImpl(provider.endpoint, {
           method: 'POST',
-          headers: { accept: 'application/json', authorization: `Bearer ${provider.apiKey}`, 'x-request-id': traceId },
-          body: imageEditForm({ model: provider.model, image, prompt: generationPrompt(params) }),
+          ...request,
           signal: AbortSignal.timeout(timeoutMs),
           redirect: 'error',
         })
@@ -116,14 +144,17 @@ async function validProviderTestImage(image, fetchImpl) {
 }
 
 export async function testConfiguredProvider({ endpoint, model, apiKey, traceId, fetchImpl = globalThis.fetch }) {
+  const request = imageProviderRequest({
+    endpoint,
+    model,
+    image: { type: 'image/png', data: PROVIDER_TEST_PNG },
+    prompt: 'Edit this room reference image while preserving its geometry and camera viewpoint. Apply a minimal modern interior style.',
+    apiKey,
+    traceId,
+  })
   const response = await fetchImpl(endpoint, {
     method: 'POST',
-    headers: { accept: 'application/json', authorization: `Bearer ${apiKey}`, 'x-request-id': traceId },
-    body: imageEditForm({
-      model,
-      image: { type: 'image/png', data: PROVIDER_TEST_PNG },
-      prompt: 'Edit this room reference image while preserving its geometry and camera viewpoint. Apply a minimal modern interior style.',
-    }),
+    ...request,
     signal: AbortSignal.timeout(30_000),
     redirect: 'error',
   })
