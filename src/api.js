@@ -42,19 +42,59 @@ export const api = {
   order: (id) => request(`/api/orders/${encodeURIComponent(id)}`),
 }
 
-export function fileToImage(file) {
+export const UPLOAD_IMAGE_MAX_EDGE = 1600
+export const UPLOAD_IMAGE_QUALITY = 0.88
+
+function readDataUrl(blob) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onerror = () => reject(new ApiError('FILE_READ_FAILED'))
-    reader.onload = () => {
-      const dataUrl = String(reader.result)
-      resolve({
-        previewUrl: dataUrl,
-        payload: { name: file.name, type: file.type, dataBase64: dataUrl.split(',', 2)[1] ?? '' },
-      })
-    }
-    reader.readAsDataURL(file)
+    reader.onload = () => resolve(String(reader.result))
+    reader.readAsDataURL(blob)
   })
+}
+
+function loadImage(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const image = new Image()
+    image.onerror = () => reject(new ApiError('FILE_READ_FAILED'))
+    image.onload = () => resolve(image)
+    image.src = dataUrl
+  })
+}
+
+function canvasBlob(canvas) {
+  return new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', UPLOAD_IMAGE_QUALITY))
+}
+
+export async function fileToImage(file) {
+  const originalUrl = await readDataUrl(file)
+  try {
+    const image = await loadImage(originalUrl)
+    const ratio = Math.min(1, UPLOAD_IMAGE_MAX_EDGE / Math.max(image.naturalWidth, image.naturalHeight))
+    const width = Math.max(1, Math.round(image.naturalWidth * ratio))
+    const height = Math.max(1, Math.round(image.naturalHeight * ratio))
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    const context = canvas.getContext('2d')
+    if (!context) throw new Error('Canvas is unavailable')
+    context.fillStyle = '#ffffff'
+    context.fillRect(0, 0, width, height)
+    context.drawImage(image, 0, 0, width, height)
+    const optimized = await canvasBlob(canvas)
+    if (!optimized) throw new Error('Image encoding failed')
+    const uploadUrl = await readDataUrl(optimized)
+    console.info('[Upload]', { stage: 'image-optimized', originalBytes: file.size, uploadBytes: optimized.size, width, height })
+    return {
+      previewUrl: originalUrl,
+      payload: { name: file.name.replace(/\.[^.]+$/u, '') + '.jpg', type: 'image/jpeg', dataBase64: uploadUrl.split(',', 2)[1] ?? '' },
+    }
+  } catch (error) {
+    if (error instanceof ApiError) throw error
+    console.info('[Upload]', { stage: 'optimization-fallback', originalBytes: file.size })
+    return { previewUrl: originalUrl, payload: { name: file.name, type: file.type, dataBase64: originalUrl.split(',', 2)[1] ?? '' } }
+  }
 }
 
 export async function pollGeneration(id, { interval = 350, signal, onUpdate } = {}) {

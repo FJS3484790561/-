@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { api, ApiError } from './api.js'
+import { api, ApiError, UPLOAD_IMAGE_MAX_EDGE, UPLOAD_IMAGE_QUALITY } from './api.js'
+
+test('uses bounded high-quality upload image settings', () => {
+  assert.equal(UPLOAD_IMAGE_MAX_EDGE, 1600)
+  assert.equal(UPLOAD_IMAGE_QUALITY, 0.88)
+})
 
 test('API requests use HttpOnly cookie credentials without client session tokens', async () => {
   const calls = []

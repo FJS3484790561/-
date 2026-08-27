@@ -21,20 +21,38 @@ function localGenerationProvider() {
 export const GENERATION_TIMEOUT_MS = 90_000
 const PROVIDER_TEST_TIMEOUT_MS = 60_000
 
-function generationPrompt(params = {}) {
-  const preferences = []
-  if (params.preferences?.layout) preferences.push('preserve a practical room layout')
-  if (params.preferences?.storage) preferences.push('include thoughtful storage')
-  if (params.preferences?.light) preferences.push('improve natural and ambient lighting')
+const STYLE_DIRECTIONS = {
+  现代简约: 'Warm white and light gray base, natural wood accents, restrained charcoal details; clean-lined furniture, linen, wood, matte metal and clear glass.',
+  北欧: 'Warm white and soft beige base, light oak and muted sage accents; simple light-wood furniture, cotton-linen textiles, subtle woven details and uncluttered decor.',
+  日式: 'Off-white, pale natural wood and calm earth tones; low-profile furniture, linen, wood, paper-like diffused lighting and restrained handmade details.',
+  奶油风: 'Cream and warm beige base with caramel accents; rounded furniture, boucle and cotton-linen textiles, pale wood and soft matte finishes.',
+  原木风: 'Warm white and layered natural timber tones with small olive-green accents; visible wood grain, linen, rattan and tactile natural materials.',
+  轻奢: 'Warm ivory and taupe base with walnut and restrained brushed-brass accents; refined stone, glass, leather and matte metal without ornate excess.',
+}
+
+const SCALE_DIRECTIONS = {
+  保真: 'Make a conservative soft-furnishing refresh. Retain all usable furniture and hard finishes; mainly declutter, reposition, coordinate textiles, lighting and decor.',
+  均衡: 'Retain compatible furniture and hard finishes. Reposition, replace or visually soften only mismatched items, with a balanced soft-furnishing upgrade.',
+  创意: 'Allow noticeable changes to movable furniture, finishes, lighting and decor while retaining practical existing elements and every fixed architectural feature.',
+  大胆: 'Create a strong, coherent style transformation and replace movable furniture or surface finishes when needed, but keep the original architecture and circulation unchanged.',
+}
+
+export function generationPrompt(params = {}) {
+  const requirements = []
+  if (params.preferences?.layout) requirements.push('preserve a practical furniture layout and keep every circulation route unobstructed')
+  if (params.preferences?.storage) requirements.push('add realistic, correctly scaled storage without crowding the room')
+  if (params.preferences?.light) requirements.push('improve natural and layered ambient lighting with a warm 3000K-3500K appearance')
   return [
-    'Edit the supplied room photograph into a photorealistic interior design rendering.',
-    'Preserve the original room geometry, camera viewpoint, doors, windows, walls, and major fixed structures.',
-    `Room type: ${params.room ?? 'room'}.`,
-    `Style: ${params.theme ?? 'modern'}.`,
-    `Renovation intensity: ${params.scale ?? 'balanced'}.`,
-    preferences.length ? `Requirements: ${preferences.join(', ')}.` : '',
-    'Change finishes, furniture, decor, storage, and lighting only where consistent with the requested renovation intensity.',
-    'Show a coherent, buildable residential interior with realistic materials and lighting.',
+    'Use the supplied photograph as the authoritative reference and edit it into one photorealistic, buildable interior design image.',
+    `The space is a ${params.room ?? 'residential room'} in ${params.theme ?? 'modern'} style.`,
+    'LOCKED GEOMETRY: preserve the exact camera viewpoint, perspective, room dimensions, wall boundaries, ceiling height and shape, floor plane, doors, windows, openings, columns and all other fixed architectural structures. Do not invent unseen areas.',
+    SCALE_DIRECTIONS[params.scale] ?? SCALE_DIRECTIONS.均衡,
+    STYLE_DIRECTIONS[params.theme] ?? STYLE_DIRECTIONS.现代简约,
+    requirements.length ? `User priorities: ${requirements.join('; ')}.` : '',
+    'Coordinate the sofa, tables, chairs, cabinets, curtains, rug, lamps, wall art, cushions, plants and small accessories as one restrained composition. Keep suitable existing items where possible and remove, reposition, replace or visually soften only items that conflict with the chosen direction.',
+    'Prioritize the highest-impact visible areas and practical soft-furnishing changes. Use realistic dimensions, materials, shadows and warm natural lighting. Keep the room tidy while retaining subtle, believable signs of daily life.',
+    'The result must be safe, usable and cost-conscious: no blocked doors or walkways, floating or deformed furniture, impossible scale, duplicated objects, distorted architecture, added doors or windows, demolition, floor-plan changes, text, labels, borders or watermarks.',
+    'Return only the finished edited room image, not an explanation, mood board, collage, before-and-after layout or design notes.',
   ].filter(Boolean).join(' ')
 }
 

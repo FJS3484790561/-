@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { configuredGenerationProvider, GENERATION_TIMEOUT_MS, testConfiguredProvider } from './app-runtime.js'
+import { configuredGenerationProvider, generationPrompt, GENERATION_TIMEOUT_MS, testConfiguredProvider } from './app-runtime.js'
 import { DEFAULT_PROVIDER_TIMEOUT_MS } from './generation-service.js'
 
 const config = {
@@ -18,6 +18,18 @@ test('production generation allows provider latency with orchestration headroom'
   assert.equal(GENERATION_TIMEOUT_MS, 90_000)
   assert.equal(DEFAULT_PROVIDER_TIMEOUT_MS, 110_000)
   assert.ok(DEFAULT_PROVIDER_TIMEOUT_MS > GENERATION_TIMEOUT_MS)
+})
+
+test('builds a project-specific image editing prompt with structural and furnishing constraints', () => {
+  const prompt = generationPrompt({ room: '客厅', theme: '奶油风', scale: '保真', preferences: { layout: true, storage: true, light: true } })
+  assert.match(prompt, /authoritative reference/u)
+  assert.match(prompt, /LOCKED GEOMETRY/u)
+  assert.match(prompt, /Cream and warm beige/u)
+  assert.match(prompt, /conservative soft-furnishing refresh/u)
+  assert.match(prompt, /storage/u)
+  assert.match(prompt, /3000K-3500K/u)
+  assert.match(prompt, /no blocked doors or walkways/u)
+  assert.match(prompt, /Return only the finished edited room image/u)
 })
 
 function fixture(fetchImpl, timeoutMs = 100, providerConfig = config) {
@@ -49,7 +61,7 @@ test('uses the image edits multipart request once and returns a URL result', asy
   assert.equal(request.body.get('n'), '1')
   assert.equal(request.body.get('response_format'), 'url')
   assert.match(request.body.get('prompt'), /客厅/u)
-  assert.match(request.body.get('prompt'), /Preserve the original room geometry/u)
+  assert.match(request.body.get('prompt'), /LOCKED GEOMETRY/u)
   const uploaded = request.body.get('image')
   assert.equal(uploaded.type, 'image/png')
   assert.equal(Buffer.from(await uploaded.arrayBuffer()).toString(), 'private-original')
@@ -74,7 +86,7 @@ test('uses duoyuanx JSON reference-image protocol for generation', async () => {
   assert.equal(body.size, '1024x1024')
   assert.equal(body.n, 1)
   assert.equal(body.response_format, 'url')
-  assert.match(body.prompt, /Preserve the original room geometry/u)
+  assert.match(body.prompt, /LOCKED GEOMETRY/u)
   assert.deepEqual(result, { effectImage: { url: 'https://images.example.test/result.png', mimeType: 'image/png' } })
   assert.equal(JSON.stringify(data.logs).includes(body.image), false)
 })
