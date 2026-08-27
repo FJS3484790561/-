@@ -108,7 +108,8 @@ function ProviderForm({ provider, onClose, onSaved }) {
   return <div className="backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="form-title">
     <header className="dialog-header"><div><span className="kicker">{editing ? '配置维护' : '接入配置'}</span><h2 id="form-title">{editing ? '编辑 Provider' : '新建 Provider'}</h2></div><button className="icon-button" type="button" onClick={onClose} aria-label="关闭表单"><X size={19} /></button></header>
     <form className="provider-form" onSubmit={submit}>
-      {field('name', '名称', 'render-api')}{field('endpoint', 'API 端点', 'https://provider.example/v1')}{field('model', '模型', 'interior-v1')}
+      {field('name', '名称', 'render-api')}{field('endpoint', '图片编辑 API 端点', 'https://provider.example/v1/images/edits')}{field('model', '图片编辑模型', 'image-edit-v1')}
+      <p className="form-help">必须填写明确支持上传原图的图片编辑端点；文字生图 generations 端点不能满足正式 MVP。</p>
       <label><span>{editing ? '轮换密钥（可选）' : 'API 密钥'}</span><input name="apiKey" type="password" autoComplete="new-password" placeholder={editing ? '留空则保持现有密钥' : '仅用于本次保存'} aria-invalid={Boolean(fields.apiKey)} aria-describedby="key-help" /><small id="key-help">{fields.apiKey || (editing ? '现有密钥不会回填；输入新值即完成轮换。' : '保存后页面不会显示或回填密钥。')}</small></label>
       {message && <Alert kind="error">{message}</Alert>}
       <div className="dialog-actions"><button className="text-button" type="button" onClick={onClose}>取消</button><button className="primary-button compact" type="submit" disabled={busy}>{busy && <RefreshCw className="spin" size={17} />}{busy ? '正在测试并保存' : '测试并保存'}</button></div>

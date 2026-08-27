@@ -1,13 +1,13 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { configuredGenerationProvider } from './app-runtime.js'
+import { configuredGenerationProvider, testConfiguredProvider } from './app-runtime.js'
 
 const config = {
   ok: true,
   provider: {
     name: 'image-provider',
     model: 'gpt-image-2',
-    endpoint: 'https://provider.example.test/v1/images/generations',
+    endpoint: 'https://provider.example.test/v1/images/edits',
     apiKey: 'super-secret-key',
   },
 }
@@ -26,7 +26,7 @@ function fixture(fetchImpl, timeoutMs = 100) {
   return { provider, logs }
 }
 
-test('uses the standard Images API request once and returns a URL result', async () => {
+test('uses the image edits multipart request once and returns a URL result', async () => {
   let calls = 0
   let request
   const data = fixture(async (_url, options) => {
@@ -35,15 +35,17 @@ test('uses the standard Images API request once and returns a URL result', async
     return new Response(JSON.stringify({ data: [{ url: 'https://images.example.test/result.png' }] }), { status: 200, headers: { 'content-type': 'application/json' } })
   })
   const result = await data.provider.generate({ image: { type: 'image/png', data: Buffer.from('private-original') }, params, traceId: 'generation_safe' })
-  const body = JSON.parse(request.body)
   assert.equal(calls, 1)
-  assert.deepEqual(Object.keys(body).sort(), ['model', 'n', 'prompt', 'response_format', 'size'])
-  assert.equal(body.model, 'gpt-image-2')
-  assert.equal(body.size, '1024x1024')
-  assert.equal(body.n, 1)
-  assert.equal(body.response_format, 'url')
-  assert.match(body.prompt, /客厅/u)
-  assert.equal(request.body.includes('private-original'), false)
+  assert.equal(request.headers['content-type'], undefined)
+  assert.equal(request.body.get('model'), 'gpt-image-2')
+  assert.equal(request.body.get('size'), '1024x1024')
+  assert.equal(request.body.get('n'), '1')
+  assert.equal(request.body.get('response_format'), 'url')
+  assert.match(request.body.get('prompt'), /客厅/u)
+  assert.match(request.body.get('prompt'), /Preserve the original room geometry/u)
+  const uploaded = request.body.get('image')
+  assert.equal(uploaded.type, 'image/png')
+  assert.equal(Buffer.from(await uploaded.arrayBuffer()).toString(), 'private-original')
   assert.deepEqual(result, { effectImage: { url: 'https://images.example.test/result.png', mimeType: 'image/png' } })
   assert.equal(JSON.stringify(data.logs).includes('super-secret-key'), false)
   assert.equal(JSON.stringify(data.logs).includes('private-original'), false)
@@ -86,4 +88,25 @@ test('times out once without retrying and emits a safe error code', async () => 
   )
   assert.equal(calls, 1)
   assert.match(JSON.stringify(data.logs), /PROVIDER_TIMEOUT/u)
+})
+
+test('save gate tests the same image edit multipart protocol with a safe fixture', async () => {
+  const output = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64')
+  let request
+  const result = await testConfiguredProvider({
+    endpoint: 'https://provider.example.test/v1/images/edits',
+    model: 'gpt-image-2',
+    apiKey: 'save-gate-secret',
+    traceId: 'provider_test_safe',
+    fetchImpl: async (_url, options) => {
+      request = options
+      return new Response(JSON.stringify({ data: [{ b64_json: output.toString('base64') }] }), { status: 200 })
+    },
+  })
+  assert.deepEqual(result, { ok: true, httpStatus: 200 })
+  assert.equal(request.headers['content-type'], undefined)
+  assert.equal(request.body.get('model'), 'gpt-image-2')
+  assert.equal(request.body.get('image').type, 'image/png')
+  assert.match(request.body.get('prompt'), /preserving its geometry and camera viewpoint/u)
+  assert.equal(JSON.stringify([...request.body.keys()]).includes('save-gate-secret'), false)
 })

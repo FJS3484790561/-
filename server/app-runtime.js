@@ -26,12 +26,26 @@ function generationPrompt(params = {}) {
   if (params.preferences?.storage) preferences.push('include thoughtful storage')
   if (params.preferences?.light) preferences.push('improve natural and ambient lighting')
   return [
-    `Create a photorealistic interior design rendering for a ${params.room ?? 'room'}.`,
+    'Edit the supplied room photograph into a photorealistic interior design rendering.',
+    'Preserve the original room geometry, camera viewpoint, doors, windows, walls, and major fixed structures.',
+    `Room type: ${params.room ?? 'room'}.`,
     `Style: ${params.theme ?? 'modern'}.`,
     `Renovation intensity: ${params.scale ?? 'balanced'}.`,
     preferences.length ? `Requirements: ${preferences.join(', ')}.` : '',
+    'Change finishes, furniture, decor, storage, and lighting only where consistent with the requested renovation intensity.',
     'Show a coherent, buildable residential interior with realistic materials and lighting.',
   ].filter(Boolean).join(' ')
+}
+
+function imageEditForm({ model, image, prompt }) {
+  const form = new FormData()
+  form.set('model', model)
+  form.set('image', new Blob([image.data], { type: image.type }), image.type === 'image/jpeg' ? 'room.jpg' : 'room.png')
+  form.set('prompt', prompt)
+  form.set('size', '1024x1024')
+  form.set('n', '1')
+  form.set('response_format', 'url')
+  return form
 }
 
 function diagnosticError(message, { code, stage, httpStatus } = {}) {
@@ -52,8 +66,8 @@ export function configuredGenerationProvider({ adminProviderService, fallback, f
       try {
         const response = await fetchImpl(provider.endpoint, {
           method: 'POST',
-          headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${provider.apiKey}`, 'x-request-id': traceId },
-          body: JSON.stringify({ model: provider.model, prompt: generationPrompt(params), size: '1024x1024', n: 1, response_format: 'url' }),
+          headers: { accept: 'application/json', authorization: `Bearer ${provider.apiKey}`, 'x-request-id': traceId },
+          body: imageEditForm({ model: provider.model, image, prompt: generationPrompt(params) }),
           signal: AbortSignal.timeout(timeoutMs),
           redirect: 'error',
         })
@@ -76,6 +90,7 @@ export function configuredGenerationProvider({ adminProviderService, fallback, f
 }
 
 const TEST_MAX_IMAGE_BYTES = 10 * 1024 * 1024
+const PROVIDER_TEST_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64')
 
 function validImageBytes(bytes) {
   if (!bytes?.length || bytes.length > TEST_MAX_IMAGE_BYTES) return false
@@ -100,8 +115,18 @@ async function validProviderTestImage(image, fetchImpl) {
   return validImageBytes(bytes)
 }
 
-async function testConfiguredProvider({ endpoint, model, apiKey, traceId, fetchImpl = globalThis.fetch }) {
-  const response = await fetchImpl(endpoint, { method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${apiKey}`, 'x-request-id': traceId }, body: JSON.stringify({ model, prompt: 'A minimal interior design test image.', size: '1024x1024', n: 1, response_format: 'url' }), signal: AbortSignal.timeout(30_000), redirect: 'error' })
+export async function testConfiguredProvider({ endpoint, model, apiKey, traceId, fetchImpl = globalThis.fetch }) {
+  const response = await fetchImpl(endpoint, {
+    method: 'POST',
+    headers: { accept: 'application/json', authorization: `Bearer ${apiKey}`, 'x-request-id': traceId },
+    body: imageEditForm({
+      model,
+      image: { type: 'image/png', data: PROVIDER_TEST_PNG },
+      prompt: 'Edit this room reference image while preserving its geometry and camera viewpoint. Apply a minimal modern interior style.',
+    }),
+    signal: AbortSignal.timeout(30_000),
+    redirect: 'error',
+  })
   if (!response.ok) return { ok: false, code: 'PROVIDER_TEST_FAILED', message: `Provider returned ${response.status}`, stage: 'response', httpStatus: response.status }
   let payload
   try { payload = await response.json() } catch { return { ok: false, code: 'INVALID_PROVIDER_RESPONSE', message: 'Provider 返回的不是有效 JSON', stage: 'parse', httpStatus: response.status } }
