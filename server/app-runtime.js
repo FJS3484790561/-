@@ -18,7 +18,8 @@ function localGenerationProvider() {
   return { generate: async ({ image }) => ({ effectImage: { url: `data:${image.type};base64,${Buffer.from(image.data).toString('base64')}`, mimeType: image.type } }) }
 }
 
-const GENERATION_TIMEOUT_MS = 30_000
+const GENERATION_TIMEOUT_MS = 60_000
+const PROVIDER_TEST_TIMEOUT_MS = 60_000
 
 function generationPrompt(params = {}) {
   const preferences = []
@@ -54,6 +55,30 @@ function usesJsonReferenceImage(endpoint) {
     return url.hostname.toLowerCase() === 'duoyuanx.com' && /\/v1\/images\/generations\/?$/u.test(url.pathname)
   } catch {
     return false
+  }
+}
+
+function providerProtocol(endpoint) {
+  return usesJsonReferenceImage(endpoint) ? 'json-reference-image' : 'multipart-image-edit'
+}
+
+function safeUpstreamDiagnostic(value) {
+  if (typeof value !== 'string') return null
+  const cleaned = value
+    .replace(/Bearer\s+\S+/giu, 'Bearer [REDACTED]')
+    .replace(/\b(?:sk|key|token)-[A-Za-z0-9_-]+\b/giu, '[REDACTED]')
+    .replace(/data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/giu, '[REDACTED_IMAGE]')
+    .replace(/[A-Za-z0-9+/=]{120,}/gu, '[REDACTED_DATA]')
+    .trim()
+  return cleaned ? cleaned.slice(0, 240) : null
+}
+
+async function upstreamFailure(response) {
+  let payload
+  try { payload = await response.json() } catch { return {} }
+  return {
+    upstreamCode: safeUpstreamDiagnostic(String(payload?.error?.code ?? payload?.code ?? '')),
+    upstreamMessage: safeUpstreamDiagnostic(payload?.error?.message ?? payload?.message),
   }
 }
 
@@ -143,7 +168,9 @@ async function validProviderTestImage(image, fetchImpl) {
   return validImageBytes(bytes)
 }
 
-export async function testConfiguredProvider({ endpoint, model, apiKey, traceId, fetchImpl = globalThis.fetch }) {
+export async function testConfiguredProvider({ endpoint, model, apiKey, traceId, fetchImpl = globalThis.fetch, timeoutMs = PROVIDER_TEST_TIMEOUT_MS }) {
+  const startedAt = Date.now()
+  const protocol = providerProtocol(endpoint)
   const request = imageProviderRequest({
     endpoint,
     model,
@@ -152,18 +179,34 @@ export async function testConfiguredProvider({ endpoint, model, apiKey, traceId,
     apiKey,
     traceId,
   })
-  const response = await fetchImpl(endpoint, {
-    method: 'POST',
-    ...request,
-    signal: AbortSignal.timeout(30_000),
-    redirect: 'error',
-  })
-  if (!response.ok) return { ok: false, code: 'PROVIDER_TEST_FAILED', message: `Provider returned ${response.status}`, stage: 'response', httpStatus: response.status }
+  let response
+  try {
+    response = await fetchImpl(endpoint, {
+      method: 'POST',
+      ...request,
+      signal: AbortSignal.timeout(timeoutMs),
+      redirect: 'error',
+    })
+  } catch (reason) {
+    const timeout = reason?.name === 'TimeoutError' || reason?.name === 'AbortError' || reason?.code === 'ABORT_ERR' || reason?.code === 23
+    return {
+      ok: false,
+      code: timeout ? 'PROVIDER_TIMEOUT' : 'PROVIDER_REQUEST_FAILED',
+      message: timeout ? `Provider 在 ${Math.round(timeoutMs / 1000)} 秒内未返回结果` : '无法连接 Provider',
+      stage: 'request',
+      protocol,
+      elapsedMs: Date.now() - startedAt,
+    }
+  }
+  if (!response.ok) {
+    const diagnostic = await upstreamFailure(response)
+    return { ok: false, code: 'PROVIDER_TEST_FAILED', message: diagnostic.upstreamMessage ?? `Provider returned ${response.status}`, stage: 'response', httpStatus: response.status, protocol, elapsedMs: Date.now() - startedAt, ...diagnostic }
+  }
   let payload
-  try { payload = await response.json() } catch { return { ok: false, code: 'INVALID_PROVIDER_RESPONSE', message: 'Provider 返回的不是有效 JSON', stage: 'parse', httpStatus: response.status } }
+  try { payload = await response.json() } catch { return { ok: false, code: 'INVALID_PROVIDER_RESPONSE', message: 'Provider 返回的不是有效 JSON', stage: 'parse', httpStatus: response.status, protocol, elapsedMs: Date.now() - startedAt } }
   const image = payload?.data?.[0]?.url || payload?.data?.[0]?.b64_json || payload?.effectImage?.url
-  if (!await validProviderTestImage(image, fetchImpl)) return { ok: false, code: 'INVALID_PROVIDER_RESPONSE', message: 'Provider 未返回可验证的图片', stage: 'validation', httpStatus: response.status }
-  return { ok: true, httpStatus: response.status }
+  if (!await validProviderTestImage(image, fetchImpl)) return { ok: false, code: 'INVALID_PROVIDER_RESPONSE', message: 'Provider 未返回可验证的图片', stage: 'validation', httpStatus: response.status, protocol, elapsedMs: Date.now() - startedAt }
+  return { ok: true, httpStatus: response.status, protocol, elapsedMs: Date.now() - startedAt }
 }
 
 export function createAppRuntime({ mailer, paymentProvider = localPaymentProvider(), generationProvider = localGenerationProvider(), providerTester = null, fetchImpl = globalThis.fetch, logger = console, encryptionKey = randomBytes(32), secureCookies = false, allowedOrigins = [], adminEmail = 'admin@example.com', stores = {}, objectStorage = null, close = () => {} } = {}) {

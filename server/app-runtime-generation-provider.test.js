@@ -124,7 +124,10 @@ test('save gate tests the same image edit multipart protocol with a safe fixture
       return new Response(JSON.stringify({ data: [{ b64_json: output.toString('base64') }] }), { status: 200 })
     },
   })
-  assert.deepEqual(result, { ok: true, httpStatus: 200 })
+  assert.equal(result.ok, true)
+  assert.equal(result.httpStatus, 200)
+  assert.equal(result.protocol, 'multipart-image-edit')
+  assert.ok(result.elapsedMs >= 0)
   assert.equal(request.headers['content-type'], undefined)
   assert.equal(request.body.get('model'), 'gpt-image-2')
   assert.equal(request.body.get('image').type, 'image/png')
@@ -145,7 +148,10 @@ test('save gate uses duoyuanx JSON reference-image protocol', async () => {
       return new Response(JSON.stringify({ data: [{ b64_json: output.toString('base64') }] }), { status: 200 })
     },
   })
-  assert.deepEqual(result, { ok: true, httpStatus: 200 })
+  assert.equal(result.ok, true)
+  assert.equal(result.httpStatus, 200)
+  assert.equal(result.protocol, 'json-reference-image')
+  assert.ok(result.elapsedMs >= 0)
   const body = JSON.parse(request.body)
   assert.equal(request.headers['content-type'], 'application/json')
   assert.equal(body.model, 'gpt-image-2')
@@ -154,4 +160,35 @@ test('save gate uses duoyuanx JSON reference-image protocol', async () => {
   assert.equal(body.response_format, 'url')
   assert.equal(JSON.stringify(request).includes('duoyuan-save-gate-secret'), true)
   assert.equal(JSON.stringify(body).includes('duoyuan-save-gate-secret'), false)
+})
+
+test('save gate returns redacted upstream diagnostics without exposing credentials or image data', async () => {
+  const result = await testConfiguredProvider({
+    endpoint: 'https://duoyuanx.com/v1/images/generations',
+    model: 'gpt-image-2',
+    apiKey: 'diagnostic-secret',
+    traceId: 'provider_test_diagnostic',
+    fetchImpl: async () => new Response(JSON.stringify({ error: { code: 'invalid_image', message: 'image is too small; Bearer should-not-leak' } }), { status: 400 }),
+  })
+  assert.equal(result.ok, false)
+  assert.equal(result.httpStatus, 400)
+  assert.equal(result.protocol, 'json-reference-image')
+  assert.equal(result.upstreamCode, 'invalid_image')
+  assert.equal(result.upstreamMessage, 'image is too small; Bearer [REDACTED]')
+  assert.equal(JSON.stringify(result).includes('should-not-leak'), false)
+  assert.equal(JSON.stringify(result).includes('diagnostic-secret'), false)
+})
+
+test('save gate classifies abort code 23 as a provider timeout', async () => {
+  const result = await testConfiguredProvider({
+    endpoint: 'https://duoyuanx.com/v1/images/generations',
+    model: 'gpt-image-2',
+    apiKey: 'timeout-secret',
+    traceId: 'provider_test_timeout',
+    timeoutMs: 5,
+    fetchImpl: async () => { const error = new Error('aborted'); error.name = 'AbortError'; error.code = 23; throw error },
+  })
+  assert.equal(result.code, 'PROVIDER_TIMEOUT')
+  assert.equal(result.stage, 'request')
+  assert.equal(result.protocol, 'json-reference-image')
 })

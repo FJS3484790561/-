@@ -137,8 +137,19 @@ export class AdminProviderService {
     try {
       result = await this.testProvider({ ...next, apiKey: secret, traceId })
       if (!result?.ok) {
-        const failure = { ok: false, code: result?.code || 'PROVIDER_TEST_FAILED', message: result?.message, traceId, stage: result?.stage || 'request', ...(result?.httpStatus ? { httpStatus: result.httpStatus } : {}) }
-        this.logger.error?.('[Provider Test]', { traceId, provider: next.name, model: next.model, stage: failure.stage, code: failure.code, httpStatus: failure.httpStatus })
+        const failure = {
+          ok: false,
+          code: result?.code || 'PROVIDER_TEST_FAILED',
+          message: result?.message,
+          traceId,
+          stage: result?.stage || 'request',
+          ...(result?.httpStatus ? { httpStatus: result.httpStatus } : {}),
+          ...(result?.protocol ? { protocol: result.protocol } : {}),
+          ...(Number.isFinite(result?.elapsedMs) ? { elapsedMs: result.elapsedMs } : {}),
+          ...(result?.upstreamCode ? { upstreamCode: result.upstreamCode } : {}),
+          ...(result?.upstreamMessage ? { upstreamMessage: result.upstreamMessage } : {}),
+        }
+        this.logger.error?.('[Provider Test]', { traceId, provider: next.name, model: next.model, stage: failure.stage, code: failure.code, httpStatus: failure.httpStatus, protocol: failure.protocol, elapsedMs: failure.elapsedMs, upstreamCode: failure.upstreamCode, upstreamMessage: failure.upstreamMessage })
         return failure
       }
     } catch (reason) {
@@ -146,8 +157,8 @@ export class AdminProviderService {
       return { ok: false, code: reason?.code || 'PROVIDER_TEST_FAILED', message: 'Provider 测试失败，请查看追踪编号和服务器日志。', traceId, stage: 'request' }
     }
     const saved = this.#persistTestedConfiguration({ actorId: access.user.id, existing, providerId, next, secret, apiKeyProvided: apiKey !== undefined })
-    this.logger.info?.('[Provider Test]', { traceId, provider: next.name, model: next.model, stage: 'saved', code: 'PROVIDER_TEST_PASSED', httpStatus: result.httpStatus })
-    return { ...saved, traceId, stage: 'saved', ...(result.httpStatus ? { httpStatus: result.httpStatus } : {}), test: { ok: true } }
+    this.logger.info?.('[Provider Test]', { traceId, provider: next.name, model: next.model, stage: 'saved', code: 'PROVIDER_TEST_PASSED', httpStatus: result.httpStatus, protocol: result.protocol, elapsedMs: result.elapsedMs })
+    return { ...saved, traceId, stage: 'saved', ...(result.httpStatus ? { httpStatus: result.httpStatus } : {}), ...(result.protocol ? { protocol: result.protocol } : {}), ...(Number.isFinite(result.elapsedMs) ? { elapsedMs: result.elapsedMs } : {}), test: { ok: true } }
   }
 
   #persistTestedConfiguration({ actorId, existing, providerId, next, secret, apiKeyProvided }) {

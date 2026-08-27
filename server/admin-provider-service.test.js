@@ -96,3 +96,15 @@ test('returns staged redacted diagnostics without exposing the API key', async (
   assert.equal(JSON.stringify({ result, logs }).includes('never-log-this-secret'), false)
   assert.equal(data.service.list({ sessionToken: data.adminToken }).providers.length, 0)
 })
+
+test('passes safe protocol, timing and upstream diagnostics to the admin console', async () => {
+  const logs = []
+  const logger = { info: (...values) => logs.push(values), error: (...values) => logs.push(values) }
+  const data = await fixture({ testProvider: async () => ({ ok: false, code: 'PROVIDER_TEST_FAILED', stage: 'response', httpStatus: 400, protocol: 'json-reference-image', elapsedMs: 321, upstreamCode: 'invalid_image', upstreamMessage: 'image is too small' }), logger })
+  const result = await data.service.create({ sessionToken: data.adminToken, name: 'diagnostic-json', endpoint: 'https://duoyuanx.com/v1/images/generations', model: 'gpt-image-2', apiKey: 'never-log-upstream-secret' })
+  assert.equal(result.protocol, 'json-reference-image')
+  assert.equal(result.elapsedMs, 321)
+  assert.equal(result.upstreamCode, 'invalid_image')
+  assert.equal(result.upstreamMessage, 'image is too small')
+  assert.equal(JSON.stringify({ result, logs }).includes('never-log-upstream-secret'), false)
+})
