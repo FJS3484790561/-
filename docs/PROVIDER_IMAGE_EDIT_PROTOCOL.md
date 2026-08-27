@@ -46,3 +46,15 @@
 - 内容安全拒绝、429、5xx、超时及供应商错误体的稳定契约。
 
 在上述能力至少通过一次受控真实编辑测试之前，不得把 `REAL-IMAGE-EDIT-PROVIDER` 标记为通过，也不得部署或执行真实扣点验证。
+
+## 供应商公开资料核查（2026-08-27）
+
+只读访问 `https://coderapi.vip/api/pricing` 得到以下供应商公开数据：
+
+- `gpt-image-2` 的公开描述为“用于图片生成和编辑类任务”。
+- 该模型公开的 `supported_endpoint_types` 只有 `image-generation`。
+- 公开记录没有给出 `/v1/images/edits`、multipart 字段、原图限制、返回 URL 时效或数据留存说明。
+- `quota_type: 1`、`model_price: 1` 和分组倍率属于平台内部计费数据；公开页面没有提供足以换算单次编辑人民币成本的完整公式。
+- `grok-imagine-image-2.0` 同样只公开为 `image-generation`，不能作为图片编辑能力证据。
+
+因此，“模型描述提到编辑”不足以证明当前网关实现了兼容的图片编辑端点。真实 Provider 验收继续为 `BLOCKED`。
