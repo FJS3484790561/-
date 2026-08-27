@@ -18,7 +18,7 @@ function localGenerationProvider() {
   return { generate: async ({ image }) => ({ effectImage: { url: `data:${image.type};base64,${Buffer.from(image.data).toString('base64')}`, mimeType: image.type } }) }
 }
 
-const GENERATION_TIMEOUT_MS = 60_000
+export const GENERATION_TIMEOUT_MS = 90_000
 const PROVIDER_TEST_TIMEOUT_MS = 60_000
 
 function generationPrompt(params = {}) {

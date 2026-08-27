@@ -4,6 +4,7 @@ import { request as httpsRequest } from 'node:https'
 import { isIP } from 'node:net'
 
 const DEFAULT_MAX_IMAGE_BYTES = 10 * 1024 * 1024
+export const DEFAULT_PROVIDER_TIMEOUT_MS = 110_000
 const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png'])
 const ALLOWED_ROOMS = new Set(['客厅', '卧室', '餐厅', '厨房', '书房'])
 const ALLOWED_THEMES = new Set(['现代简约', '北欧', '日式', '奶油风', '原木风', '轻奢'])
@@ -150,7 +151,7 @@ export class ProviderRegistry {
 }
 
 export class GenerationService {
-  constructor({ authService, store = new MemoryGenerationStore(), providers = new ProviderRegistry(), providerName = 'default', clock = () => Date.now(), maxImageBytes = DEFAULT_MAX_IMAGE_BYTES, providerTimeoutMs = 70_000, creditLedger = null, objectStorage = null, fetchImpl = globalThis.fetch, lookupImpl = lookup, logger = console } = {}) {
+  constructor({ authService, store = new MemoryGenerationStore(), providers = new ProviderRegistry(), providerName = 'default', clock = () => Date.now(), maxImageBytes = DEFAULT_MAX_IMAGE_BYTES, providerTimeoutMs = DEFAULT_PROVIDER_TIMEOUT_MS, creditLedger = null, objectStorage = null, fetchImpl = globalThis.fetch, lookupImpl = lookup, logger = console } = {}) {
     if (!authService) throw new Error('authService is required')
     this.authService = authService
     this.store = store

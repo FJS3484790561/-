@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { configuredGenerationProvider, testConfiguredProvider } from './app-runtime.js'
+import { configuredGenerationProvider, GENERATION_TIMEOUT_MS, testConfiguredProvider } from './app-runtime.js'
+import { DEFAULT_PROVIDER_TIMEOUT_MS } from './generation-service.js'
 
 const config = {
   ok: true,
@@ -12,6 +13,12 @@ const config = {
   },
 }
 const params = { room: '客厅', theme: '现代简约', scale: '均衡', preferences: { layout: true, light: true } }
+
+test('production generation allows provider latency with orchestration headroom', () => {
+  assert.equal(GENERATION_TIMEOUT_MS, 90_000)
+  assert.equal(DEFAULT_PROVIDER_TIMEOUT_MS, 110_000)
+  assert.ok(DEFAULT_PROVIDER_TIMEOUT_MS > GENERATION_TIMEOUT_MS)
+})
 
 function fixture(fetchImpl, timeoutMs = 100, providerConfig = config) {
   const logs = []
