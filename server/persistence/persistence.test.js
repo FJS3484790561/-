@@ -21,7 +21,7 @@ function paymentProvider() {
 
 function runtimeFor(stores, objectRoot = null) {
   const objectStorage = objectRoot ? new LocalObjectStorage({ root: objectRoot, metadata: stores.objects }) : null
-  return createAppRuntime({ stores, objectStorage, encryptionKey, paymentProvider: paymentProvider(), adminEmail: 'admin@example.com', close: stores.close })
+  return createAppRuntime({ stores, objectStorage, encryptionKey, paymentProvider: paymentProvider(), providerTester: async () => ({ ok: true, httpStatus: 200 }), adminEmail: 'admin@example.com', close: stores.close })
 }
 
 async function registerAndLogin(runtime, email, password = 'password123') {
@@ -103,7 +103,7 @@ test('persists accounts, sessions, credits, orders, generations, works and provi
 
   assert.equal((await runtime.provisionAdmin({ password: 'admin-password' })).ok, true)
   const adminLogin = await runtime.authService.login({ email: 'admin@example.com', password: 'admin-password' })
-  const provider = runtime.adminProviderService.create({ sessionToken: adminLogin.sessionToken, name: 'primary', endpoint: 'https://provider.example.test', model: 'interior-v1', apiKey: 'test-key' })
+  const provider = await runtime.adminProviderService.create({ sessionToken: adminLogin.sessionToken, name: 'primary', endpoint: 'https://provider.example.test', model: 'interior-v1', apiKey: 'test-key' })
   assert.equal(provider.ok, true)
   assert.equal(runtime.adminProviderService.setEnabled({ sessionToken: adminLogin.sessionToken, providerId: provider.provider.id, enabled: true }).ok, true)
   runtime.close()
@@ -228,7 +228,7 @@ test('rolls back provider configuration when its audit record cannot be written'
   assert.equal((await runtime.provisionAdmin({ password: 'admin-password' })).ok, true)
   const admin = await runtime.authService.login({ email: 'admin@example.com', password: 'admin-password' })
   stores.providers.audit.push = () => { throw new Error('simulated audit write failure') }
-  assert.throws(() => runtime.adminProviderService.create({ sessionToken: admin.sessionToken, name: 'rollback-provider', endpoint: 'https://provider.example.test', model: 'one', apiKey: 'test-key' }), /audit write failure/)
+  await assert.rejects(() => runtime.adminProviderService.create({ sessionToken: admin.sessionToken, name: 'rollback-provider', endpoint: 'https://provider.example.test', model: 'one', apiKey: 'test-key' }), /audit write failure/)
   assert.equal(stores.database.prepare('SELECT COUNT(*) AS count FROM provider_configs').get().count, 0)
   assert.equal(stores.database.prepare('SELECT COUNT(*) AS count FROM provider_audit').get().count, 0)
   runtime.close()

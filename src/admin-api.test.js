@@ -29,7 +29,7 @@ test('admin client uses only the approved HTTP routes and same-origin cookies', 
 
 test('admin client returns structured safe errors', async (t) => {
   const previousFetch = globalThis.fetch
-  globalThis.fetch = async () => new Response(JSON.stringify({ ok: false, code: 'FORBIDDEN' }), { status: 403, headers: { 'content-type': 'application/json' } })
+  globalThis.fetch = async () => new Response(JSON.stringify({ ok: false, code: 'PROVIDER_TEST_FAILED', stage: 'response', httpStatus: 401, traceId: 'provider_test_safe' }), { status: 502, headers: { 'content-type': 'application/json' } })
   t.after(() => { globalThis.fetch = previousFetch })
-  await assert.rejects(adminApi.listProviders(), (error) => error instanceof ApiError && error.status === 403 && error.code === 'FORBIDDEN')
+  await assert.rejects(adminApi.listProviders(), (error) => error instanceof ApiError && error.status === 502 && error.code === 'PROVIDER_TEST_FAILED' && error.stage === 'response' && error.httpStatus === 401 && error.traceId === 'provider_test_safe')
 })

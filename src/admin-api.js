@@ -9,6 +9,7 @@ export class ApiError extends Error {
     this.fields = payload.fields || {}
     this.traceId = payload.traceId
     this.stage = payload.stage
+    this.httpStatus = payload.httpStatus ?? status
   }
 }
 

@@ -95,7 +95,7 @@ test('exposes credits, works and orders while preserving user isolation', async 
 })
 
 test('protects administrator provider routes and redacts secrets', async () => {
-  const runtime = createAppRuntime()
+  const runtime = createAppRuntime({ providerTester: async () => ({ ok: true, httpStatus: 200 }) })
   const publicAdminRegistration = await call(runtime.api, '/api/auth/register', { method: 'POST', body: { email: 'admin@example.com', password: 'correct-horse' } })
   assert.equal(publicAdminRegistration.response.status, 409)
   const provisioned = await runtime.provisionAdmin({ password: 'correct-horse' })
@@ -114,6 +114,22 @@ test('protects administrator provider routes and redacts secrets', async () => {
   assert.equal(enabled.data.provider.enabled, true)
   const audit = await call(runtime.api, `/api/admin/providers/${created.data.provider.id}/audit`, { cookie: adminCookie })
   assert.equal(JSON.stringify(audit.data).includes(secret), false)
+})
+
+test('rejects a failed Provider test without saving configuration or consuming user state', async () => {
+  const runtime = createAppRuntime({ providerTester: async () => ({ ok: false, code: 'PROVIDER_TEST_FAILED', stage: 'response', httpStatus: 401 }) })
+  assert.equal((await runtime.provisionAdmin({ password: 'correct-horse' })).ok, true)
+  const adminCookie = await login(runtime.api, 'admin@example.com')
+  const beforeTasks = runtime.generationService.store.tasks.size
+  const failed = await call(runtime.api, '/api/admin/providers', { method: 'POST', cookie: adminCookie, body: { name: 'rejected-provider', endpoint: 'https://provider.invalid/v1/images/generations', model: 'image-v1', apiKey: 'not-returned' } })
+  assert.equal(failed.response.status, 502)
+  assert.equal(failed.data.code, 'PROVIDER_TEST_FAILED')
+  assert.equal(failed.data.stage, 'response')
+  assert.equal(failed.data.httpStatus, 401)
+  assert.match(failed.data.traceId, /^provider_test_/u)
+  assert.equal(JSON.stringify(failed.data).includes('not-returned'), false)
+  assert.equal((await call(runtime.api, '/api/admin/providers', { cookie: adminCookie })).data.providers.length, 0)
+  assert.equal(runtime.generationService.store.tasks.size, beforeTasks)
 })
 
 test('rejects unsupported, malformed and oversized requests without internal details', async () => {

@@ -80,40 +80,12 @@ export class AdminProviderService {
     return { ok: true, provider: publicConfig(config) }
   }
 
-  create({ sessionToken, name, endpoint, model, apiKey }) {
-    const access = this.#authorize(sessionToken)
-    if (!access.ok) return access
-    const fields = this.#validate({ name, endpoint, model, apiKey }, { requireKey: true })
-    if (fields) return { ok: false, code: 'VALIDATION_ERROR', fields }
-    if (!this.canManage(access.user.id, name)) return { ok: false, code: 'FORBIDDEN' }
-    if ([...this.store.configs.values()].some((config) => config.name === name)) return { ok: false, code: 'PROVIDER_ALREADY_EXISTS' }
-    const now = this.clock()
-    const config = { id: `provider_${randomUUID()}`, name, endpoint, model, encryptedApiKey: encryptSecret(apiKey, this.encryptionKey), enabled: false, createdAt: now, updatedAt: now }
-    this.store.transaction(() => {
-      this.store.configs.set(config.id, config)
-      this.#record(access.user.id, config, 'created')
-    })
-    return { ok: true, provider: publicConfig(config) }
+  create(input) {
+    return this.testAndSave(input)
   }
 
-  update({ sessionToken, providerId, name, endpoint, model, apiKey }) {
-    const access = this.#authorize(sessionToken)
-    if (!access.ok) return access
-    const config = this.store.configs.get(providerId)
-    if (!config || !this.canManage(access.user.id, config.name)) return { ok: false, code: 'NOT_FOUND' }
-    const nextName = name === undefined ? config.name : cleanText(name)
-    const nextEndpoint = endpoint === undefined ? config.endpoint : cleanText(endpoint)
-    const nextModel = model === undefined ? config.model : cleanText(model)
-    const fields = this.#validate({ name: nextName, endpoint: nextEndpoint, model: nextModel, apiKey }, { requireKey: false, allowMissingKey: true })
-    if (fields) return { ok: false, code: 'VALIDATION_ERROR', fields }
-    if (!this.canManage(access.user.id, nextName)) return { ok: false, code: 'FORBIDDEN' }
-    if ([...this.store.configs.values()].some((candidate) => candidate.id !== providerId && candidate.name === nextName)) return { ok: false, code: 'PROVIDER_ALREADY_EXISTS' }
-    const updated = { ...config, name: nextName, endpoint: nextEndpoint, model: nextModel, encryptedApiKey: apiKey === undefined ? config.encryptedApiKey : encryptSecret(apiKey, this.encryptionKey), updatedAt: this.clock() }
-    this.store.transaction(() => {
-      this.store.configs.set(providerId, updated)
-      this.#record(access.user.id, updated, 'updated')
-    })
-    return { ok: true, provider: publicConfig(updated) }
+  update(input) {
+    return this.testAndSave(input)
   }
 
   setEnabled({ sessionToken, providerId, enabled }) {
@@ -153,18 +125,41 @@ export class AdminProviderService {
     const secret = apiKey === undefined ? (existing ? decryptSecret(existing.encryptedApiKey, this.encryptionKey) : '') : apiKey
     const fields = this.#validate({ ...next, apiKey: secret }, { requireKey: true })
     if (fields) return { ok: false, code: 'VALIDATION_ERROR', fields }
+    if (!this.canManage(access.user.id, next.name)) return { ok: false, code: 'FORBIDDEN' }
+    if ([...this.store.configs.values()].some((candidate) => candidate.id !== providerId && candidate.name === next.name)) return { ok: false, code: 'PROVIDER_ALREADY_EXISTS' }
     const traceId = `provider_test_${randomUUID()}`
     this.logger.info?.('[Provider Test]', { traceId, provider: next.name, model: next.model, stage: 'started' })
-    if (typeof this.testProvider !== 'function') return { ok: false, code: 'PROVIDER_TEST_UNAVAILABLE', traceId }
+    if (typeof this.testProvider !== 'function') {
+      this.logger.error?.('[Provider Test]', { traceId, provider: next.name, model: next.model, stage: 'configuration', code: 'PROVIDER_TEST_UNAVAILABLE' })
+      return { ok: false, code: 'PROVIDER_TEST_UNAVAILABLE', traceId, stage: 'configuration' }
+    }
+    let result
     try {
-      const result = await this.testProvider({ ...next, apiKey: secret, traceId })
-      if (!result?.ok) return { ok: false, code: result?.code || 'PROVIDER_TEST_FAILED', message: result?.message, traceId, stage: result?.stage || 'request' }
-      const saved = providerId ? this.update({ sessionToken, providerId, ...next, apiKey: apiKey === undefined ? undefined : secret }) : this.create({ sessionToken, ...next, apiKey: secret })
-      return saved.ok ? { ...saved, traceId, test: { ok: true } } : saved
+      result = await this.testProvider({ ...next, apiKey: secret, traceId })
+      if (!result?.ok) {
+        const failure = { ok: false, code: result?.code || 'PROVIDER_TEST_FAILED', message: result?.message, traceId, stage: result?.stage || 'request', ...(result?.httpStatus ? { httpStatus: result.httpStatus } : {}) }
+        this.logger.error?.('[Provider Test]', { traceId, provider: next.name, model: next.model, stage: failure.stage, code: failure.code, httpStatus: failure.httpStatus })
+        return failure
+      }
     } catch (reason) {
       this.logger.error?.('[Provider Test]', { traceId, provider: next.name, model: next.model, stage: 'failed', code: reason?.code || 'PROVIDER_TEST_FAILED' })
       return { ok: false, code: reason?.code || 'PROVIDER_TEST_FAILED', message: 'Provider 测试失败，请查看追踪编号和服务器日志。', traceId, stage: 'request' }
     }
+    const saved = this.#persistTestedConfiguration({ actorId: access.user.id, existing, providerId, next, secret, apiKeyProvided: apiKey !== undefined })
+    this.logger.info?.('[Provider Test]', { traceId, provider: next.name, model: next.model, stage: 'saved', code: 'PROVIDER_TEST_PASSED', httpStatus: result.httpStatus })
+    return { ...saved, traceId, stage: 'saved', ...(result.httpStatus ? { httpStatus: result.httpStatus } : {}), test: { ok: true } }
+  }
+
+  #persistTestedConfiguration({ actorId, existing, providerId, next, secret, apiKeyProvided }) {
+    const now = this.clock()
+    const config = existing
+      ? { ...existing, ...next, encryptedApiKey: apiKeyProvided ? encryptSecret(secret, this.encryptionKey) : existing.encryptedApiKey, updatedAt: now }
+      : { id: `provider_${randomUUID()}`, ...next, encryptedApiKey: encryptSecret(secret, this.encryptionKey), enabled: false, createdAt: now, updatedAt: now }
+    this.store.transaction(() => {
+      this.store.configs.set(config.id, config)
+      this.#record(actorId, config, providerId ? 'updated' : 'created')
+    })
+    return { ok: true, provider: publicConfig(config) }
   }
 
   getEnabledConfig() {

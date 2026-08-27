@@ -17,6 +17,7 @@ const RATE_LIMIT_MAX = 30
   PROVIDER_UNAVAILABLE: 503,
   GENERATION_TIMEOUT: 504,
   PROVIDER_TEST_FAILED: 502,
+  INVALID_PROVIDER_RESPONSE: 502,
   PROVIDER_TEST_UNAVAILABLE: 503,
 }
 
@@ -174,15 +175,15 @@ export class AppApi {
     if (method === 'GET' && workMatch) return safeResult(this.worksService.get({ sessionToken, workId: decodeURIComponent(workMatch[1]) }))
 
     if (method === 'GET' && pathname === '/api/admin/providers') return safeResult(this.adminProviderService.list({ sessionToken }))
-    if (method === 'POST' && pathname === '/api/admin/providers') return withJsonBody((body) => safeResult(this.adminProviderService.create({ ...body, sessionToken }), 201))
+    if (method === 'POST' && pathname === '/api/admin/providers') return withJsonBody(async (body) => safeResult(await this.adminProviderService.create({ ...body, sessionToken }), 201))
     const auditMatch = pathname.match(/^\/api\/admin\/providers\/([^/]+)\/audit$/u)
     if (method === 'GET' && auditMatch) return safeResult(this.adminProviderService.listAudit({ sessionToken, providerId: decodeURIComponent(auditMatch[1]) }))
     const enabledMatch = pathname.match(/^\/api\/admin\/providers\/([^/]+)\/enabled$/u)
     if (method === 'POST' && enabledMatch) return withJsonBody((body) => safeResult(this.adminProviderService.setEnabled({ sessionToken, providerId: decodeURIComponent(enabledMatch[1]), enabled: body.enabled })))
     const providerMatch = pathname.match(/^\/api\/admin\/providers\/([^/]+)$/u)
     if (method === 'GET' && providerMatch) return safeResult(this.adminProviderService.get({ sessionToken, providerId: decodeURIComponent(providerMatch[1]) }))
-    if (method === 'PATCH' && providerMatch) return withJsonBody((body) => safeResult(this.adminProviderService.update({ ...body, sessionToken, providerId: decodeURIComponent(providerMatch[1]) })))
-    if (method === 'POST' && pathname === '/api/admin/providers/test') return withJsonBody((body) => safeResult(this.adminProviderService.testAndSave({ ...body, sessionToken }), 200))
+    if (method === 'PATCH' && providerMatch) return withJsonBody(async (body) => safeResult(await this.adminProviderService.update({ ...body, sessionToken, providerId: decodeURIComponent(providerMatch[1]) })))
+    if (method === 'POST' && pathname === '/api/admin/providers/test') return withJsonBody(async (body) => safeResult(await this.adminProviderService.testAndSave({ ...body, sessionToken }), body.providerId ? 200 : 201))
 
     return json({ ok: false, code: 'NOT_FOUND' }, 404)
   }

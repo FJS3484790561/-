@@ -94,13 +94,13 @@ function ProviderForm({ provider, onClose, onSaved }) {
     try {
       console.info('[Provider Test] started', { provider: payload.name, model: payload.model })
       const result = await adminApi.testAndSaveProvider(editing ? { ...payload, providerId: provider.id } : payload)
-      console.info('[Provider Test] completed', { traceId: result.traceId, ok: true })
+      console.info('[Provider Test] completed', { traceId: result.traceId, stage: result.stage, httpStatus: result.httpStatus, ok: true })
       form.elements.apiKey.value = ''
       onSaved(result.provider, editing ? 'Provider 配置已更新。' : 'Provider 已创建，默认处于停用状态。')
     } catch (error) {
       form.elements.apiKey.value = ''
       setFields(error instanceof ApiError ? error.fields : {})
-      console.error('[Provider Test] failed', { code: error?.code, traceId: error?.traceId, stage: error?.stage })
+      console.error('[Provider Test] failed', { code: error?.code, traceId: error?.traceId, stage: error?.stage, httpStatus: error?.httpStatus })
       setMessage(`${messageFor(error)}${error?.traceId ? `（追踪编号：${error.traceId}）` : ''}`)
     } finally { setBusy(false) }
   }

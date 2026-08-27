@@ -167,7 +167,7 @@ export class GenerationService {
     const validation = validateRequest({ image, params }, this.maxImageBytes)
     if (validation) return Promise.resolve(validation)
     const id = `generation_${randomUUID()}`
-    const task = { id, userId: user.id, status: 'queued', createdAt: this.clock(), updatedAt: this.clock(), input: { name: image.name ?? 'upload', type: image.type, size: imageBytes(image).length }, params: { ...params, preferences: { ...(params.preferences ?? {}) } } }
+    const task = { id, traceId: id, userId: user.id, status: 'queued', createdAt: this.clock(), updatedAt: this.clock(), input: { name: image.name ?? 'upload', type: image.type, size: imageBytes(image).length }, params: { ...params, preferences: { ...(params.preferences ?? {}) } } }
     let reservation
     try {
       const prepared = this.store.transaction(() => {
@@ -218,7 +218,7 @@ export class GenerationService {
         this.store.tasks.set(task.id, task)
       }
       const output = await Promise.race([
-        provider.generate({ image, params: task.params }),
+        provider.generate({ image, params: task.params, traceId: task.traceId }),
         new Promise((_, reject) => { timeoutId = setTimeout(() => reject({ code: 'PROVIDER_TIMEOUT' }), this.providerTimeoutMs) }),
       ])
       clearTimeout(timeoutId)
@@ -258,7 +258,7 @@ export class GenerationService {
   }
 
   #publicTask(task) {
-    return { id: task.id, status: task.status, createdAt: task.createdAt, updatedAt: task.updatedAt, input: task.input, ...(task.status === 'succeeded' ? { result: task.result } : {}), ...(task.status === 'failed' ? { error: task.error } : {}) }
+    return { id: task.id, traceId: task.traceId ?? task.id, status: task.status, createdAt: task.createdAt, updatedAt: task.updatedAt, input: task.input, ...(task.status === 'succeeded' ? { result: task.result } : {}), ...(task.status === 'failed' ? { error: task.error } : {}) }
   }
 
   async #storeImage(task, kind, image) {
