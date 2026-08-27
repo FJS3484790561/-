@@ -41,6 +41,7 @@ function validateRequest({ image, params }, maxImageBytes) {
 
 function safeFailure(reason) {
   if (reason?.code === 'PROVIDER_TIMEOUT') return { code: 'GENERATION_TIMEOUT', message: '生成时间较长，请稍后重试。' }
+  if (reason?.code === 'RESULT_DOWNLOAD_FAILED') return { code: 'RESULT_DOWNLOAD_FAILED', message: '生成结果保存失败，本次不会扣除额度。' }
   return { code: 'PROVIDER_UNAVAILABLE', message: '暂时无法生成设计，请稍后重试。' }
 }
 
@@ -105,7 +106,10 @@ async function responseBytes(response, maxBytes) {
 async function pinnedHttpsResponse(url, address, timeoutMs) {
   return new Promise((resolve, reject) => {
     const request = httpsRequest(url, {
-      lookup: (_hostname, _options, callback) => callback(null, address.address, address.family),
+      lookup: (_hostname, options, callback) => {
+        if (options?.all) callback(null, [{ address: address.address, family: address.family }])
+        else callback(null, address.address, address.family)
+      },
       servername: url.hostname,
       timeout: timeoutMs,
       rejectUnauthorized: true,
@@ -228,7 +232,15 @@ export class GenerationService {
       if (!output?.effectImage?.url) return this.#fail(task, { code: 'INVALID_PROVIDER_RESPONSE' })
       let effectImage = { url: String(output.effectImage.url), mimeType: output.effectImage.mimeType ?? 'image/jpeg' }
       if (this.objectStorage) {
-        const result = await this.#providerImageBytes(output.effectImage)
+        let result
+        try {
+          result = await this.#providerImageBytes(output.effectImage)
+        } catch (reason) {
+          const failure = reason instanceof Error ? reason : new Error('Provider result download failed')
+          failure.code = 'RESULT_DOWNLOAD_FAILED'
+          failure.stage = 'result-download'
+          throw failure
+        }
         const stored = await this.#storeImage(task, 'result', result)
         effectImage = { url: this.#objectUrl(stored.key), objectKey: stored.key, mimeType: stored.mimeType }
         this.logger.info?.('[Generation]', { traceId: task.traceId, stage: 'result-stored' })

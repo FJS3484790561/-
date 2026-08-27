@@ -125,6 +125,7 @@ test('rejects private provider result addresses before fetching', async () => {
   const created = await fixtureData.service.createGeneration({ sessionToken: fixtureData.token, image: { type: 'image/jpeg', data: jpeg }, params })
   const result = await fixtureData.service.waitForGeneration(created.task.id)
   assert.equal(result.status, 'failed')
+  assert.equal(result.error.code, 'RESULT_DOWNLOAD_FAILED')
   assert.equal(fetches, 0)
 })
 
@@ -140,5 +141,6 @@ test('rejects IPv4-mapped private provider result addresses before fetching', as
   const created = await fixtureData.service.createGeneration({ sessionToken: fixtureData.token, image: { type: 'image/jpeg', data: jpeg }, params })
   const result = await fixtureData.service.waitForGeneration(created.task.id)
   assert.equal(result.status, 'failed')
+  assert.equal(result.error.code, 'RESULT_DOWNLOAD_FAILED')
   assert.equal(fetches, 0)
 })
