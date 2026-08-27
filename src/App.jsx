@@ -261,46 +261,29 @@ function SelectField({ label, value, options, onChange }) {
   );
 }
 
-function Comparison({ before, after, position, onChange }) {
+function Comparison({ before, after }) {
   return (
     <section className="comparison-block" aria-labelledby="comparison-title">
       <div className="comparison-heading">
         <div>
           <span className="section-kicker">03 / 效果对比</span>
-          <h3 id="comparison-title">左右拖动，查看空间变化</h3>
+          <h3 id="comparison-title">左右并排，完整查看空间变化</h3>
         </div>
-        <span>{position}% 效果图</span>
+        <span>图片保持原比例，不裁剪</span>
       </div>
       <div className="comparison-stage">
-        <img src={before} alt="生成之前的房间" />
-        <div
-          className="comparison-after"
-          style={{ clipPath: `inset(0 ${100 - position}% 0 0)` }}
-        >
-          <img src={after} alt="生成之后的房间" />
-        </div>
-        <span className="comparison-label before-label">生成之前</span>
-        <span className="comparison-label after-label">生成之后</span>
-        <div
-          className="comparison-divider"
-          style={{ left: `${position}%` }}
-          aria-hidden="true"
-        >
-          <span />
-        </div>
-        <label className="visually-hidden" htmlFor="comparison-range">
-          调整原图和效果图的分界位置
-        </label>
-        <input
-          id="comparison-range"
-          className="comparison-range"
-          type="range"
-          min="0"
-          max="100"
-          value={position}
-          aria-valuetext={`${position}% 效果图`}
-          onChange={(event) => onChange(Number(event.target.value))}
-        />
+        <figure className="comparison-item comparison-before">
+          <div className="comparison-image-frame">
+            <img src={before} alt="改造之前的房间" />
+          </div>
+          <figcaption>改造之前</figcaption>
+        </figure>
+        <figure className="comparison-item comparison-after">
+          <div className="comparison-image-frame">
+            <img src={after} alt="改造之后的房间" />
+          </div>
+          <figcaption>改造之后</figcaption>
+        </figure>
       </div>
     </section>
   );
@@ -319,7 +302,6 @@ function Workbench({ credits, refreshCredits, onSaved }) {
   const [task, setTask] = useState(null);
   const [status, setStatus] = useState("empty");
   const [notice, setNotice] = useState(null);
-  const [comparePosition, setComparePosition] = useState(50);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const inputRef = useRef(null);
@@ -372,18 +354,20 @@ function Workbench({ credits, refreshCredits, onSaved }) {
     setNotice(null);
     setSaved(false);
     const submittedAt = Date.now();
+    let uploadAndTaskCreateMs;
     console.info("[Generation]", { stage: "submit-started" });
     try {
       const created = await api.createGeneration({
         image: image.payload,
         params,
       });
+      uploadAndTaskCreateMs = Date.now() - submittedAt;
       console.info("[Generation]", {
         stage: "task-created",
         traceId: created.task.traceId ?? created.task.id,
         taskId: created.task.id,
         status: created.task.status,
-        elapsedMs: Date.now() - submittedAt,
+        elapsedMs: uploadAndTaskCreateMs,
       });
       setTask(created.task);
       setStatus("polling");
@@ -392,6 +376,19 @@ function Workbench({ credits, refreshCredits, onSaved }) {
         onUpdate: setTask,
       });
       setTask(completed);
+      const totalClientMs = Date.now() - submittedAt;
+      console.info("[Generation Timing]", {
+        traceId: completed.traceId ?? completed.id,
+        totalClientMs,
+        uploadAndTaskCreateMs,
+        clientPollingMs: Math.max(0, totalClientMs - uploadAndTaskCreateMs),
+        providerMs: completed.timings?.providerMs ?? null,
+        nonProviderServerMs: completed.timings?.nonProviderMs ?? null,
+        serverTotalMs: completed.timings?.serverTotalMs ?? null,
+        originalStoreMs: completed.timings?.originalStoreMs ?? null,
+        resultStoreMs: completed.timings?.resultStoreMs ?? null,
+        creditSettlementMs: completed.timings?.creditSettlementMs ?? null,
+      });
       if (completed.status === "succeeded") {
         setStatus("success");
         setNotice({ tone: "success", text: "生成成功，已消耗 1 次额度。" });
@@ -628,8 +625,6 @@ function Workbench({ credits, refreshCredits, onSaved }) {
             <Comparison
               before={image.previewUrl}
               after={resultUrl}
-              position={comparePosition}
-              onChange={setComparePosition}
             />
           )}
           <div className="workspace-actions">
@@ -674,7 +669,6 @@ function WorksPage({ refreshKey }) {
   const [state, setState] = useState({ loading: true, works: [], error: null });
   const [selected, setSelected] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [position, setPosition] = useState(50);
   const load = useCallback(async () => {
     setState((current) => ({ ...current, loading: true, error: null }));
     try {
@@ -746,8 +740,6 @@ function WorksPage({ refreshKey }) {
           <Comparison
             before={selected.original.url}
             after={selected.effectImage.url}
-            position={position}
-            onChange={setPosition}
           />
           <a
             className="secondary-button download-link"

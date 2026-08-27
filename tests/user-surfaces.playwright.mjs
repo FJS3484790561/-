@@ -1,5 +1,8 @@
 import { chromium } from "playwright";
 import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
+
+const viteBin = fileURLToPath(new URL("../../bin/vite.js", import.meta.resolve("vite")));
 
 const baseUrl = "http://127.0.0.1:4186/";
 const png = Buffer.from(
@@ -19,7 +22,7 @@ const processes = [
   }),
   spawn(
     process.execPath,
-    ["node_modules/vite/bin/vite.js", "--host=127.0.0.1", "--port=4186", "--strictPort"],
+    [viteBin, "--host=127.0.0.1", "--port=4186", "--strictPort"],
     {
       cwd: process.cwd(),
       stdio: ["ignore", "pipe", "pipe"],
@@ -86,22 +89,18 @@ try {
       .setInputFiles({ name: "room.png", mimeType: "image/png", buffer: png });
     await page.getByRole("button", { name: /生成设计/ }).click();
     await page.getByText("设计方案已生成").waitFor();
-    const slider = page.getByRole("slider", {
-      name: "调整原图和效果图的分界位置",
-    });
-    await slider.focus();
-    await slider.press("ArrowRight");
-    const sliderValue = Number(await slider.inputValue());
-    const labels = await Promise.all([
-      page.getByText("生成之前", { exact: true }).boundingBox(),
-      page.getByText("生成之后", { exact: true }).boundingBox(),
+    const comparisonItems = page.locator(".comparison-item");
+    const comparisonBoxes = await Promise.all([
+      comparisonItems.nth(0).boundingBox(),
+      comparisonItems.nth(1).boundingBox(),
     ]);
-    const labelsOverlap =
-      labels.every(Boolean) &&
-      labels[0].x < labels[1].x + labels[1].width &&
-      labels[0].x + labels[0].width > labels[1].x &&
-      labels[0].y < labels[1].y + labels[1].height &&
-      labels[0].y + labels[0].height > labels[1].y;
+    const comparisonItemsSideBySide =
+      comparisonBoxes.every(Boolean) && comparisonBoxes[0].x < comparisonBoxes[1].x;
+    const comparisonImagesUseContain = await page
+      .locator(".comparison-image-frame img")
+      .evaluateAll((images) =>
+        images.every((image) => getComputedStyle(image).objectFit === "contain"),
+      );
     await page.getByRole("button", { name: "保存作品" }).click();
     await page.getByText("作品已保存到“我的作品”。").waitFor();
 
@@ -133,16 +132,16 @@ try {
     const result = {
       viewport: viewport.name,
       noHorizontalOverflow: metrics.scrollWidth <= metrics.clientWidth,
-      keyboardSliderMoved: sliderValue > 50,
-      comparisonLabelsDoNotOverlap: !labelsOverlap,
+      comparisonItemsSideBySide,
+      comparisonImagesUseContain,
       expectedUnauthorizedResponses: expectedUnauthorizedResponses.length,
       unexpectedConsoleErrors,
     };
     results.push(result);
     if (
       !result.noHorizontalOverflow ||
-      !result.keyboardSliderMoved ||
-      !result.comparisonLabelsDoNotOverlap ||
+      !result.comparisonItemsSideBySide ||
+      !result.comparisonImagesUseContain ||
       unexpectedConsoleErrors.length
     )
       process.exitCode = 1;

@@ -74,7 +74,10 @@ async function readJson(request, maxBytes) {
 
 function decodeImage(image) {
   if (!image || typeof image.dataBase64 !== 'string' || !/^[A-Za-z0-9+/]*={0,2}$/u.test(image.dataBase64)) return image
-  return { name: image.name, type: image.type, data: Buffer.from(image.dataBase64, 'base64') }
+  const dimensions = Number.isInteger(image.width) && image.width > 0 && Number.isInteger(image.height) && image.height > 0
+    ? { width: image.width, height: image.height }
+    : {}
+  return { name: image.name, type: image.type, ...dimensions, data: Buffer.from(image.dataBase64, 'base64') }
 }
 
 export class AppApi {

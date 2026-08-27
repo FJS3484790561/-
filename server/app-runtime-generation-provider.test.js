@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { configuredGenerationProvider, generationPrompt, GENERATION_TIMEOUT_MS, testConfiguredProvider } from './app-runtime.js'
+import { configuredGenerationProvider, generationPrompt, generationSizeForImage, GENERATION_TIMEOUT_MS, testConfiguredProvider } from './app-runtime.js'
 import { DEFAULT_PROVIDER_TIMEOUT_MS } from './generation-service.js'
 
 const config = {
@@ -18,6 +18,13 @@ test('production generation allows provider latency with orchestration headroom'
   assert.equal(GENERATION_TIMEOUT_MS, 90_000)
   assert.equal(DEFAULT_PROVIDER_TIMEOUT_MS, 110_000)
   assert.ok(DEFAULT_PROVIDER_TIMEOUT_MS > GENERATION_TIMEOUT_MS)
+})
+
+test('keeps the source orientation while staying near the square pixel budget', () => {
+  assert.equal(generationSizeForImage({ width: 1600, height: 900 }), '1360x768')
+  assert.equal(generationSizeForImage({ width: 900, height: 1600 }), '768x1360')
+  assert.equal(generationSizeForImage({ width: 1200, height: 1200 }), '1024x1024')
+  assert.equal(generationSizeForImage({}), '1024x1024')
 })
 
 test('builds a project-specific image editing prompt with structural and furnishing constraints', () => {
@@ -65,7 +72,8 @@ test('uses the image edits multipart request once and returns a URL result', asy
   const uploaded = request.body.get('image')
   assert.equal(uploaded.type, 'image/png')
   assert.equal(Buffer.from(await uploaded.arrayBuffer()).toString(), 'private-original')
-  assert.deepEqual(result, { effectImage: { url: 'https://images.example.test/result.png', mimeType: 'image/png' } })
+  assert.deepEqual(result.effectImage, { url: 'https://images.example.test/result.png', mimeType: 'image/png' })
+  assert.ok(Number.isFinite(result.timings.providerMs))
   assert.equal(JSON.stringify(data.logs).includes('super-secret-key'), false)
   assert.equal(JSON.stringify(data.logs).includes('private-original'), false)
 })
@@ -87,8 +95,20 @@ test('uses duoyuanx JSON reference-image protocol for generation', async () => {
   assert.equal(body.n, 1)
   assert.equal(body.response_format, 'url')
   assert.match(body.prompt, /LOCKED GEOMETRY/u)
-  assert.deepEqual(result, { effectImage: { url: 'https://images.example.test/result.png', mimeType: 'image/png' } })
+  assert.deepEqual(result.effectImage, { url: 'https://images.example.test/result.png', mimeType: 'image/png' })
+  assert.ok(Number.isFinite(result.timings.providerMs))
   assert.equal(JSON.stringify(data.logs).includes(body.image), false)
+})
+
+test('requests a landscape result for a landscape reference image', async () => {
+  let request
+  const duoyuanConfig = { ok: true, provider: { ...config.provider, name: 'duoyuanx', endpoint: 'https://duoyuanx.com/v1/images/generations' } }
+  const data = fixture(async (_url, options) => {
+    request = options
+    return new Response(JSON.stringify({ data: [{ url: 'https://images.example.test/result.png' }] }), { status: 200 })
+  }, 100, duoyuanConfig)
+  await data.provider.generate({ image: { type: 'image/png', width: 1600, height: 900, data: Buffer.from('private-original') }, params, traceId: 'generation_landscape' })
+  assert.equal(JSON.parse(request.body).size, '1360x768')
 })
 
 test('supports base64 Images API output without logging image content', async () => {

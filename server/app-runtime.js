@@ -56,12 +56,21 @@ export function generationPrompt(params = {}) {
   ].filter(Boolean).join(' ')
 }
 
-function imageEditForm({ model, image, prompt }) {
+export function generationSizeForImage(image) {
+  if (!Number.isFinite(image?.width) || !Number.isFinite(image?.height) || image.width <= 0 || image.height <= 0) return '1024x1024'
+  const ratio = Math.min(3, Math.max(1 / 3, image.width / image.height))
+  const targetPixels = 1024 * 1024
+  const width = Math.max(16, Math.round(Math.sqrt(targetPixels * ratio) / 16) * 16)
+  const height = Math.max(16, Math.round(Math.sqrt(targetPixels / ratio) / 16) * 16)
+  return `${width}x${height}`
+}
+
+function imageEditForm({ model, image, prompt, size }) {
   const form = new FormData()
   form.set('model', model)
   form.set('image', new Blob([image.data], { type: image.type }), image.type === 'image/jpeg' ? 'room.jpg' : 'room.png')
   form.set('prompt', prompt)
-  form.set('size', '1024x1024')
+  form.set('size', size)
   form.set('n', '1')
   form.set('response_format', 'url')
   return form
@@ -102,6 +111,7 @@ async function upstreamFailure(response) {
 
 function imageProviderRequest({ endpoint, model, image, prompt, apiKey, traceId }) {
   const headers = { accept: 'application/json', authorization: `Bearer ${apiKey}`, 'x-request-id': traceId }
+  const size = generationSizeForImage(image)
   if (usesJsonReferenceImage(endpoint)) {
     headers['content-type'] = 'application/json'
     return {
@@ -110,13 +120,13 @@ function imageProviderRequest({ endpoint, model, image, prompt, apiKey, traceId 
         model,
         prompt,
         image: Buffer.from(image.data).toString('base64'),
-        size: '1024x1024',
+        size,
         n: 1,
         response_format: 'url',
       }),
     }
   }
-  return { headers, body: imageEditForm({ model, image, prompt }) }
+  return { headers, body: imageEditForm({ model, image, prompt, size }) }
 }
 
 function diagnosticError(message, { code, stage, httpStatus } = {}) {
@@ -151,7 +161,8 @@ export function configuredGenerationProvider({ adminProviderService, fallback, f
         const result = payload?.data?.[0] ?? payload?.effectImage
         const url = result?.url || (result?.b64_json ? `data:image/png;base64,${result.b64_json}` : null)
         if (!url) throw diagnosticError('Provider response did not contain an image', { code: 'INVALID_PROVIDER_RESPONSE', stage: 'validation', httpStatus: response.status })
-        return { effectImage: { url, mimeType: result?.mimeType ?? 'image/png' } }
+        const providerMs = Date.now() - startedAt
+        return { effectImage: { url, mimeType: result?.mimeType ?? 'image/png' }, timings: { providerMs } }
       } catch (reason) {
         const timeout = reason?.name === 'TimeoutError' || reason?.code === 'ABORT_ERR'
         const failure = timeout ? diagnosticError('Provider request timed out', { code: 'PROVIDER_TIMEOUT', stage: 'request' }) : reason

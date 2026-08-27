@@ -173,7 +173,8 @@ export class GenerationService {
     const validation = validateRequest({ image, params }, this.maxImageBytes)
     if (validation) return Promise.resolve(validation)
     const id = `generation_${randomUUID()}`
-    const task = { id, traceId: id, userId: user.id, status: 'queued', createdAt: this.clock(), updatedAt: this.clock(), input: { name: image.name ?? 'upload', type: image.type, size: imageBytes(image).length }, params: { ...params, preferences: { ...(params.preferences ?? {}) } } }
+    const dimensions = Number.isFinite(image.width) && Number.isFinite(image.height) ? { width: image.width, height: image.height } : {}
+    const task = { id, traceId: id, userId: user.id, status: 'queued', createdAt: this.clock(), updatedAt: this.clock(), input: { name: image.name ?? 'upload', type: image.type, size: imageBytes(image).length, ...dimensions }, params: { ...params, preferences: { ...(params.preferences ?? {}) } } }
     let reservation
     try {
       const prepared = this.store.transaction(() => {
@@ -210,6 +211,8 @@ export class GenerationService {
   }
 
   async #run(task, image) {
+    const serverStartedAt = Date.now()
+    task.timings = { queuedMs: Math.max(0, this.clock() - task.createdAt) }
     task.status = 'running'
     task.updatedAt = this.clock()
     this.store.tasks.set(task.id, task)
@@ -217,22 +220,29 @@ export class GenerationService {
     const provider = this.providers.get(this.providerName)
     if (!provider) return this.#fail(task, { code: 'PROVIDER_UNAVAILABLE' })
     let timeoutId
+    let providerStartedAt
     try {
       if (this.objectStorage) {
+        const originalStoreStartedAt = Date.now()
         const original = storedImageBytes(image)
         const stored = await this.#storeImage(task, 'original', original)
+        task.timings.originalStoreMs = Date.now() - originalStoreStartedAt
         task.input = { ...task.input, objectKey: stored.key, url: this.#objectUrl(stored.key) }
         this.store.tasks.set(task.id, task)
-        this.logger.info?.('[Generation]', { traceId: task.traceId, stage: 'original-stored' })
+        this.logger.info?.('[Generation]', { traceId: task.traceId, stage: 'original-stored', elapsedMs: task.timings.originalStoreMs })
       }
+      providerStartedAt = Date.now()
       const output = await Promise.race([
         provider.generate({ image, params: task.params, traceId: task.traceId }),
         new Promise((_, reject) => { timeoutId = setTimeout(() => reject({ code: 'PROVIDER_TIMEOUT' }), this.providerTimeoutMs) }),
       ])
       clearTimeout(timeoutId)
-      if (!output?.effectImage?.url) return this.#fail(task, { code: 'INVALID_PROVIDER_RESPONSE' })
+      task.timings.providerCallMs = Date.now() - providerStartedAt
+      task.timings.providerMs = Number.isFinite(output?.timings?.providerMs) ? output.timings.providerMs : task.timings.providerCallMs
+      if (!output?.effectImage?.url) throw { code: 'INVALID_PROVIDER_RESPONSE' }
       let effectImage = { url: String(output.effectImage.url), mimeType: output.effectImage.mimeType ?? 'image/jpeg' }
       if (this.objectStorage) {
+        const resultStoreStartedAt = Date.now()
         let result
         try {
           result = await this.#providerImageBytes(output.effectImage)
@@ -243,9 +253,11 @@ export class GenerationService {
           throw failure
         }
         const stored = await this.#storeImage(task, 'result', result)
+        task.timings.resultStoreMs = Date.now() - resultStoreStartedAt
         effectImage = { url: this.#objectUrl(stored.key), objectKey: stored.key, mimeType: stored.mimeType }
-        this.logger.info?.('[Generation]', { traceId: task.traceId, stage: 'result-stored' })
+        this.logger.info?.('[Generation]', { traceId: task.traceId, stage: 'result-stored', elapsedMs: task.timings.resultStoreMs })
       }
+      const creditSettlementStartedAt = Date.now()
       this.store.transaction(() => {
         const settlement = this.creditLedger?.settleForUser({ userId: task.userId, reservationId: task.reservationId })
         if (settlement && !settlement.ok) {
@@ -258,9 +270,19 @@ export class GenerationService {
         task.updatedAt = this.clock()
         this.store.tasks.set(task.id, task)
       })
+      task.timings.creditSettlementMs = Date.now() - creditSettlementStartedAt
+      task.timings.serverTotalMs = Date.now() - serverStartedAt
+      task.timings.nonProviderMs = Math.max(0, task.timings.serverTotalMs - task.timings.providerCallMs)
+      this.store.tasks.set(task.id, task)
+      this.logger.info?.('[Generation Timing]', { traceId: task.traceId, ...task.timings })
       this.logger.info?.('[Generation]', { traceId: task.traceId, stage: 'succeeded', code: 'GENERATION_SUCCEEDED' })
     } catch (reason) {
       clearTimeout(timeoutId)
+      task.timings.serverTotalMs = Date.now() - serverStartedAt
+      if (!Number.isFinite(task.timings.providerCallMs)) task.timings.providerCallMs = providerStartedAt ? Date.now() - providerStartedAt : 0
+      if (!Number.isFinite(task.timings.providerMs)) task.timings.providerMs = task.timings.providerCallMs
+      task.timings.nonProviderMs = Math.max(0, task.timings.serverTotalMs - task.timings.providerCallMs)
+      this.logger.info?.('[Generation Timing]', { traceId: task.traceId, ...task.timings })
       this.logger.error?.('[Generation]', { traceId: task.traceId, stage: reason?.stage ?? (reason?.code === 'PROVIDER_TIMEOUT' ? 'timeout' : 'failed'), code: reason?.code ?? 'PROVIDER_UNAVAILABLE', ...(reason?.httpStatus ? { httpStatus: reason.httpStatus } : {}) })
       this.#fail(task, safeFailure(reason))
     }
@@ -277,7 +299,7 @@ export class GenerationService {
   }
 
   #publicTask(task) {
-    return { id: task.id, traceId: task.traceId ?? task.id, status: task.status, createdAt: task.createdAt, updatedAt: task.updatedAt, input: task.input, ...(task.status === 'succeeded' ? { result: task.result } : {}), ...(task.status === 'failed' ? { error: task.error } : {}) }
+    return { id: task.id, traceId: task.traceId ?? task.id, status: task.status, createdAt: task.createdAt, updatedAt: task.updatedAt, input: task.input, ...(task.timings ? { timings: { ...task.timings } } : {}), ...(task.status === 'succeeded' ? { result: task.result } : {}), ...(task.status === 'failed' ? { error: task.error } : {}) }
   }
 
   async #storeImage(task, kind, image) {

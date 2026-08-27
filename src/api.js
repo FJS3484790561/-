@@ -68,9 +68,14 @@ function canvasBlob(canvas) {
 }
 
 export async function fileToImage(file) {
+  const startedAt = Date.now()
   const originalUrl = await readDataUrl(file)
+  let sourceWidth
+  let sourceHeight
   try {
     const image = await loadImage(originalUrl)
+    sourceWidth = image.naturalWidth
+    sourceHeight = image.naturalHeight
     const ratio = Math.min(1, UPLOAD_IMAGE_MAX_EDGE / Math.max(image.naturalWidth, image.naturalHeight))
     const width = Math.max(1, Math.round(image.naturalWidth * ratio))
     const height = Math.max(1, Math.round(image.naturalHeight * ratio))
@@ -85,15 +90,15 @@ export async function fileToImage(file) {
     const optimized = await canvasBlob(canvas)
     if (!optimized) throw new Error('Image encoding failed')
     const uploadUrl = await readDataUrl(optimized)
-    console.info('[Upload]', { stage: 'image-optimized', originalBytes: file.size, uploadBytes: optimized.size, width, height })
+    console.info('[Upload]', { stage: 'image-optimized', originalBytes: file.size, uploadBytes: optimized.size, width, height, elapsedMs: Date.now() - startedAt })
     return {
       previewUrl: originalUrl,
-      payload: { name: file.name.replace(/\.[^.]+$/u, '') + '.jpg', type: 'image/jpeg', dataBase64: uploadUrl.split(',', 2)[1] ?? '' },
+      payload: { name: file.name.replace(/\.[^.]+$/u, '') + '.jpg', type: 'image/jpeg', width, height, dataBase64: uploadUrl.split(',', 2)[1] ?? '' },
     }
   } catch (error) {
     if (error instanceof ApiError) throw error
-    console.info('[Upload]', { stage: 'optimization-fallback', originalBytes: file.size })
-    return { previewUrl: originalUrl, payload: { name: file.name, type: file.type, dataBase64: originalUrl.split(',', 2)[1] ?? '' } }
+    console.info('[Upload]', { stage: 'optimization-fallback', originalBytes: file.size, elapsedMs: Date.now() - startedAt })
+    return { previewUrl: originalUrl, payload: { name: file.name, type: file.type, ...(sourceWidth && sourceHeight ? { width: sourceWidth, height: sourceHeight } : {}), dataBase64: originalUrl.split(',', 2)[1] ?? '' } }
   }
 }
 
@@ -117,7 +122,7 @@ export async function pollGeneration(id, { interval = 350, signal, onUpdate } = 
       lastStatus = task.status
     }
     if (task.status === 'succeeded' || task.status === 'failed') {
-      const details = { stage: task.status, traceId: task.traceId ?? id, taskId: id, attempt, elapsedMs: Date.now() - startedAt }
+      const details = { stage: task.status, traceId: task.traceId ?? id, taskId: id, attempt, elapsedMs: Date.now() - startedAt, ...(task.timings ? { serverTimings: task.timings } : {}) }
       if (task.status === 'failed') console.error('[Generation]', { ...details, code: task.error?.code ?? 'GENERATION_FAILED' })
       else console.info('[Generation]', details)
       return task

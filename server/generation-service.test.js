@@ -24,6 +24,9 @@ test('creates an async generation and returns one safe result', async () => {
   assert.equal(result.status, 'succeeded')
   assert.deepEqual(result.result.original, { name: 'room.jpg', type: 'image/jpeg', size: jpeg.length })
   assert.deepEqual(result.result.effectImage, { url: '/generated/result.jpg', mimeType: 'image/jpeg' })
+  assert.ok(Number.isFinite(result.timings.providerMs))
+  assert.ok(Number.isFinite(result.timings.nonProviderMs))
+  assert.ok(Number.isFinite(result.timings.serverTotalMs))
 })
 
 test('rejects invalid images and never calls the provider', async () => {

@@ -1,5 +1,8 @@
 import { chromium } from 'playwright'
 import { spawn } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
+
+const viteBin = fileURLToPath(new URL('../../bin/vite.js', import.meta.resolve('vite')))
 
 const baseUrl = process.env.PLAYWRIGHT_BASE_URL ?? 'http://127.0.0.1:4174/'
 const viewports = [
@@ -10,7 +13,7 @@ const viewports = [
 
 let serverProcess
 if (!process.env.PLAYWRIGHT_BASE_URL) {
-  serverProcess = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host=127.0.0.1', '--port=4174'], { cwd: process.cwd(), stdio: 'ignore' })
+  serverProcess = spawn(process.execPath, [viteBin, '--host=127.0.0.1', '--port=4174'], { cwd: process.cwd(), stdio: 'ignore' })
   for (let attempt = 0; attempt < 50; attempt += 1) {
     try {
       const response = await fetch(baseUrl)
@@ -40,28 +43,21 @@ try {
     await page.getByRole('button', { name: /生成设计/ }).click()
     await page.getByText('设计方案已生成，可以查看对比').waitFor()
 
-    const slider = page.getByRole('slider', { name: '调整原图和效果图的分界位置' })
-    await slider.focus()
-    await slider.press('ArrowRight')
-    const sliderValue = await slider.inputValue()
     const bodyMetrics = await page.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth }))
-    const focusOutline = await page.locator('.comparison-stage').evaluate((element) => getComputedStyle(element).outlineStyle)
-    const labels = await Promise.all([
-      page.getByText('生成之前', { exact: true }).boundingBox(),
-      page.getByText('生成之后', { exact: true }).boundingBox(),
-    ])
-    const overlap = labels.every(Boolean) && labels[0].x < labels[1].x + labels[1].width && labels[0].x + labels[0].width > labels[1].x && labels[0].y < labels[1].y + labels[1].height && labels[0].y + labels[0].height > labels[1].y
+    const comparisonItems = page.locator('.comparison-item')
+    const boxes = await Promise.all([comparisonItems.nth(0).boundingBox(), comparisonItems.nth(1).boundingBox()])
+    const comparisonItemsSideBySide = boxes.every(Boolean) && boxes[0].x < boxes[1].x
+    const comparisonImagesUseContain = await page.locator('.comparison-image-frame img').evaluateAll((images) => images.every((image) => getComputedStyle(image).objectFit === 'contain'))
 
     const result = {
       viewport: viewport.name,
       noHorizontalOverflow: bodyMetrics.scrollWidth <= bodyMetrics.clientWidth,
-      keyboardSliderMoved: Number(sliderValue) > 50,
-      focusVisible: focusOutline !== 'none',
-      comparisonLabelsDoNotOverlap: !overlap,
+      comparisonItemsSideBySide,
+      comparisonImagesUseContain,
       consoleErrors,
     }
     results.push(result)
-    if (!result.noHorizontalOverflow || !result.keyboardSliderMoved || !result.focusVisible || !result.comparisonLabelsDoNotOverlap || result.consoleErrors.length) process.exitCode = 1
+    if (!result.noHorizontalOverflow || !result.comparisonItemsSideBySide || !result.comparisonImagesUseContain || result.consoleErrors.length) process.exitCode = 1
     await page.close()
   }
 } finally {
