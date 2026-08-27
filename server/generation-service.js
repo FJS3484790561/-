@@ -146,7 +146,7 @@ export class ProviderRegistry {
 }
 
 export class GenerationService {
-  constructor({ authService, store = new MemoryGenerationStore(), providers = new ProviderRegistry(), providerName = 'default', clock = () => Date.now(), maxImageBytes = DEFAULT_MAX_IMAGE_BYTES, providerTimeoutMs = 30_000, creditLedger = null, objectStorage = null, fetchImpl = globalThis.fetch, lookupImpl = lookup } = {}) {
+  constructor({ authService, store = new MemoryGenerationStore(), providers = new ProviderRegistry(), providerName = 'default', clock = () => Date.now(), maxImageBytes = DEFAULT_MAX_IMAGE_BYTES, providerTimeoutMs = 30_000, creditLedger = null, objectStorage = null, fetchImpl = globalThis.fetch, lookupImpl = lookup, logger = console } = {}) {
     if (!authService) throw new Error('authService is required')
     this.authService = authService
     this.store = store
@@ -159,6 +159,7 @@ export class GenerationService {
     this.objectStorage = objectStorage
     this.fetchImpl = fetchImpl
     this.lookupImpl = lookupImpl
+    this.logger = logger
   }
 
   createGeneration({ sessionToken, image, params }) {
@@ -207,6 +208,7 @@ export class GenerationService {
     task.status = 'running'
     task.updatedAt = this.clock()
     this.store.tasks.set(task.id, task)
+    this.logger.info?.('[Generation]', { traceId: task.traceId, stage: 'started' })
     const provider = this.providers.get(this.providerName)
     if (!provider) return this.#fail(task, { code: 'PROVIDER_UNAVAILABLE' })
     let timeoutId
@@ -216,6 +218,7 @@ export class GenerationService {
         const stored = await this.#storeImage(task, 'original', original)
         task.input = { ...task.input, objectKey: stored.key, url: this.#objectUrl(stored.key) }
         this.store.tasks.set(task.id, task)
+        this.logger.info?.('[Generation]', { traceId: task.traceId, stage: 'original-stored' })
       }
       const output = await Promise.race([
         provider.generate({ image, params: task.params, traceId: task.traceId }),
@@ -228,6 +231,7 @@ export class GenerationService {
         const result = await this.#providerImageBytes(output.effectImage)
         const stored = await this.#storeImage(task, 'result', result)
         effectImage = { url: this.#objectUrl(stored.key), objectKey: stored.key, mimeType: stored.mimeType }
+        this.logger.info?.('[Generation]', { traceId: task.traceId, stage: 'result-stored' })
       }
       this.store.transaction(() => {
         const settlement = this.creditLedger?.settleForUser({ userId: task.userId, reservationId: task.reservationId })
@@ -241,8 +245,10 @@ export class GenerationService {
         task.updatedAt = this.clock()
         this.store.tasks.set(task.id, task)
       })
+      this.logger.info?.('[Generation]', { traceId: task.traceId, stage: 'succeeded', code: 'GENERATION_SUCCEEDED' })
     } catch (reason) {
       clearTimeout(timeoutId)
+      this.logger.error?.('[Generation]', { traceId: task.traceId, stage: reason?.stage ?? (reason?.code === 'PROVIDER_TIMEOUT' ? 'timeout' : 'failed'), code: reason?.code ?? 'PROVIDER_UNAVAILABLE', ...(reason?.httpStatus ? { httpStatus: reason.httpStatus } : {}) })
       this.#fail(task, safeFailure(reason))
     }
   }

@@ -18,21 +18,59 @@ function localGenerationProvider() {
   return { generate: async ({ image }) => ({ effectImage: { url: `data:${image.type};base64,${Buffer.from(image.data).toString('base64')}`, mimeType: image.type } }) }
 }
 
-function configuredGenerationProvider({ adminProviderService, fallback, fetchImpl = globalThis.fetch }) {
+const GENERATION_TIMEOUT_MS = 30_000
+
+function generationPrompt(params = {}) {
+  const preferences = []
+  if (params.preferences?.layout) preferences.push('preserve a practical room layout')
+  if (params.preferences?.storage) preferences.push('include thoughtful storage')
+  if (params.preferences?.light) preferences.push('improve natural and ambient lighting')
+  return [
+    `Create a photorealistic interior design rendering for a ${params.room ?? 'room'}.`,
+    `Style: ${params.theme ?? 'modern'}.`,
+    `Renovation intensity: ${params.scale ?? 'balanced'}.`,
+    preferences.length ? `Requirements: ${preferences.join(', ')}.` : '',
+    'Show a coherent, buildable residential interior with realistic materials and lighting.',
+  ].filter(Boolean).join(' ')
+}
+
+function diagnosticError(message, { code, stage, httpStatus } = {}) {
+  const error = new Error(message)
+  error.code = code
+  error.stage = stage
+  if (httpStatus) error.httpStatus = httpStatus
+  return error
+}
+
+export function configuredGenerationProvider({ adminProviderService, fallback, fetchImpl = globalThis.fetch, logger = console, timeoutMs = GENERATION_TIMEOUT_MS }) {
   return {
     generate: async ({ image, params, traceId }) => {
       const configured = adminProviderService.getEnabledConfig()
       if (!configured.ok) return fallback.generate({ image, params, traceId })
       const provider = configured.provider
-      const response = await fetchImpl(provider.endpoint, {
-        method: 'POST',
-        headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${provider.apiKey}`, 'x-request-id': traceId },
-        body: JSON.stringify({ model: provider.model, image: `data:${image.type};base64,${Buffer.from(image.data).toString('base64')}`, params }),
-        redirect: 'error',
-      })
-      if (!response.ok) throw new Error(`Provider returned ${response.status}`)
-      const payload = await response.json()
-      return { effectImage: payload.effectImage ?? payload.data?.effectImage ?? payload.data?.[0] }
+      logger.info?.('[Generation]', { traceId, stage: 'provider-request', provider: provider.name, model: provider.model })
+      try {
+        const response = await fetchImpl(provider.endpoint, {
+          method: 'POST',
+          headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${provider.apiKey}`, 'x-request-id': traceId },
+          body: JSON.stringify({ model: provider.model, prompt: generationPrompt(params), size: '1024x1024', n: 1, response_format: 'url' }),
+          signal: AbortSignal.timeout(timeoutMs),
+          redirect: 'error',
+        })
+        logger.info?.('[Generation]', { traceId, stage: 'provider-response', provider: provider.name, model: provider.model, httpStatus: response.status })
+        if (!response.ok) throw diagnosticError('Provider request failed', { code: 'PROVIDER_HTTP_ERROR', stage: 'response', httpStatus: response.status })
+        let payload
+        try { payload = await response.json() } catch { throw diagnosticError('Provider response was not JSON', { code: 'INVALID_PROVIDER_RESPONSE', stage: 'parse', httpStatus: response.status }) }
+        const result = payload?.data?.[0] ?? payload?.effectImage
+        const url = result?.url || (result?.b64_json ? `data:image/png;base64,${result.b64_json}` : null)
+        if (!url) throw diagnosticError('Provider response did not contain an image', { code: 'INVALID_PROVIDER_RESPONSE', stage: 'validation', httpStatus: response.status })
+        return { effectImage: { url, mimeType: result?.mimeType ?? 'image/png' } }
+      } catch (reason) {
+        const timeout = reason?.name === 'TimeoutError' || reason?.code === 'ABORT_ERR'
+        const failure = timeout ? diagnosticError('Provider request timed out', { code: 'PROVIDER_TIMEOUT', stage: 'request' }) : reason
+        logger.error?.('[Generation]', { traceId, stage: failure?.stage ?? 'request', provider: provider.name, model: provider.model, code: failure?.code ?? 'PROVIDER_REQUEST_FAILED', ...(failure?.httpStatus ? { httpStatus: failure.httpStatus } : {}) })
+        throw failure
+      }
     },
   }
 }
@@ -78,8 +116,8 @@ export function createAppRuntime({ mailer, paymentProvider = localPaymentProvide
   const creditLedger = new CreditLedgerService({ authService, store: stores.credits ?? new MemoryCreditStore() })
   const testProvider = providerTester ?? ((config) => testConfiguredProvider({ ...config, fetchImpl }))
   const adminProviderService = new AdminProviderService({ authService, store: stores.providers ?? new MemoryAdminProviderStore(), encryptionKey, isAdmin: (user) => user.email === normalizedAdminEmail, testProvider, logger })
-  const providers = new ProviderRegistry({ default: configuredGenerationProvider({ adminProviderService, fallback: generationProvider ?? localGenerationProvider(), fetchImpl }) })
-  const generationService = new GenerationService({ authService, store: stores.generations ?? new MemoryGenerationStore(), providers, creditLedger, objectStorage, fetchImpl })
+  const providers = new ProviderRegistry({ default: configuredGenerationProvider({ adminProviderService, fallback: generationProvider ?? localGenerationProvider(), fetchImpl, logger }) })
+  const generationService = new GenerationService({ authService, store: stores.generations ?? new MemoryGenerationStore(), providers, creditLedger, objectStorage, fetchImpl, logger })
   const paymentService = new PaymentService({ authService, creditLedger, store: stores.payments ?? new MemoryPaymentStore(), provider: paymentProvider })
   const worksService = new WorksService({ authService, store: stores.works ?? new MemoryWorksStore() })
   const api = new AppApi({ authService, generationService, creditLedger, paymentService, worksService, adminProviderService, objectStorage, secureCookies, allowedOrigins })
