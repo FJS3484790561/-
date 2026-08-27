@@ -1,7 +1,10 @@
 const DEFAULT_MAX_JSON_BYTES = 16 * 1024 * 1024
 const SESSION_COOKIE = 'session'
+const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
+const RATE_LIMIT_WINDOW_MS = 60_000
+const RATE_LIMIT_MAX = 30
 
-const statusByCode = {
+  const statusByCode = {
   UNAUTHORIZED: 401,
   FORBIDDEN: 403,
   NOT_FOUND: 404,
@@ -13,6 +16,8 @@ const statusByCode = {
   PAYMENT_PROVIDER_UNAVAILABLE: 503,
   PROVIDER_UNAVAILABLE: 503,
   GENERATION_TIMEOUT: 504,
+  PROVIDER_TEST_FAILED: 502,
+  PROVIDER_TEST_UNAVAILABLE: 503,
 }
 
 function json(data, status = 200, headers = {}) {
@@ -72,7 +77,7 @@ function decodeImage(image) {
 }
 
 export class AppApi {
-  constructor({ authService, generationService, creditLedger, paymentService, worksService, adminProviderService, objectStorage = null, maxJsonBytes = DEFAULT_MAX_JSON_BYTES, secureCookies = false } = {}) {
+  constructor({ authService, generationService, creditLedger, paymentService, worksService, adminProviderService, objectStorage = null, maxJsonBytes = DEFAULT_MAX_JSON_BYTES, secureCookies = false, allowedOrigins = [] } = {}) {
     if (!authService || !generationService || !creditLedger || !paymentService || !worksService || !adminProviderService) throw new Error('all application services are required')
     this.authService = authService
     this.generationService = generationService
@@ -83,20 +88,40 @@ export class AppApi {
     this.objectStorage = objectStorage
     this.maxJsonBytes = maxJsonBytes
     this.secureCookies = secureCookies
+    this.allowedOrigins = new Set(allowedOrigins)
+    this.rateLimits = new Map()
   }
 
-  async handle(request) {
+  async handle(request, context = {}) {
     try {
-      return await this.#route(request)
+      const response = await this.#route(request, context)
+      const headers = new Headers(response.headers)
+      headers.set('x-content-type-options', 'nosniff')
+      headers.set('x-frame-options', 'DENY')
+      headers.set('referrer-policy', 'no-referrer')
+      headers.set('permissions-policy', 'camera=(), microphone=(), geolocation=()')
+      return new Response(response.body, { status: response.status, headers })
     } catch {
       return json({ ok: false, code: 'INTERNAL_ERROR' }, 500)
     }
   }
 
-  async #route(request) {
+  async #route(request, { clientAddress = 'local' } = {}) {
     const { pathname } = new URL(request.url)
     const method = request.method.toUpperCase()
     if (method === 'GET' && pathname === '/api/health') return json({ ok: true, status: 'ready' })
+
+    if (WRITE_METHODS.has(method) && pathname.startsWith('/api/')) {
+      const origin = request.headers.get('origin')
+      if (pathname !== '/api/payment-callback' && (!origin || (origin !== new URL(request.url).origin && !this.allowedOrigins.has(origin)))) return json({ ok: false, code: 'CSRF_ORIGIN_MISMATCH' }, 403)
+      const key = `${clientAddress}:${pathname}`
+      const now = Date.now()
+      const previous = this.rateLimits.get(key)
+      const entry = previous && now - previous.startedAt < RATE_LIMIT_WINDOW_MS ? previous : { startedAt: now, count: 0 }
+      entry.count += 1
+      this.rateLimits.set(key, entry)
+      if (entry.count > RATE_LIMIT_MAX) return json({ ok: false, code: 'RATE_LIMITED' }, 429, { 'retry-after': '60' })
+    }
 
     const sessionToken = cookieValue(request, SESSION_COOKIE)
     const withJsonBody = async (handler) => {
@@ -157,6 +182,7 @@ export class AppApi {
     const providerMatch = pathname.match(/^\/api\/admin\/providers\/([^/]+)$/u)
     if (method === 'GET' && providerMatch) return safeResult(this.adminProviderService.get({ sessionToken, providerId: decodeURIComponent(providerMatch[1]) }))
     if (method === 'PATCH' && providerMatch) return withJsonBody((body) => safeResult(this.adminProviderService.update({ ...body, sessionToken, providerId: decodeURIComponent(providerMatch[1]) })))
+    if (method === 'POST' && pathname === '/api/admin/providers/test') return withJsonBody((body) => safeResult(this.adminProviderService.testAndSave({ ...body, sessionToken }), 200))
 
     return json({ ok: false, code: 'NOT_FOUND' }, 404)
   }

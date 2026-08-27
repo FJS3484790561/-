@@ -52,7 +52,7 @@ export class MemoryAdminProviderStore {
 }
 
 export class AdminProviderService {
-  constructor({ authService, store = new MemoryAdminProviderStore(), encryptionKey, isAdmin, canManage = () => true, clock = () => Date.now() } = {}) {
+  constructor({ authService, store = new MemoryAdminProviderStore(), encryptionKey, isAdmin, canManage = () => true, clock = () => Date.now(), testProvider = null, logger = console } = {}) {
     if (!authService) throw new Error('authService is required')
     if (typeof isAdmin !== 'function') throw new Error('isAdmin is required')
     assertEncryptionKey(encryptionKey)
@@ -62,6 +62,8 @@ export class AdminProviderService {
     this.isAdmin = isAdmin
     this.canManage = canManage
     this.clock = clock
+    this.testProvider = testProvider
+    this.logger = logger
   }
 
   list({ sessionToken }) {
@@ -140,6 +142,44 @@ export class AdminProviderService {
     const config = this.store.configs.get(providerId)
     if (!config || !config.enabled) return { ok: false, code: 'PROVIDER_NOT_AVAILABLE' }
     return { ok: true, apiKey: decryptSecret(config.encryptedApiKey, this.encryptionKey) }
+  }
+
+  async testAndSave({ sessionToken, providerId, name, endpoint, model, apiKey }) {
+    const access = this.#authorize(sessionToken)
+    if (!access.ok) return access
+    const existing = providerId ? this.store.configs.get(providerId) : null
+    if (providerId && (!existing || !this.canManage(access.user.id, existing.name))) return { ok: false, code: 'NOT_FOUND' }
+    const next = { name: name === undefined ? existing?.name : cleanText(name), endpoint: endpoint === undefined ? existing?.endpoint : cleanText(endpoint), model: model === undefined ? existing?.model : cleanText(model) }
+    const secret = apiKey === undefined ? (existing ? decryptSecret(existing.encryptedApiKey, this.encryptionKey) : '') : apiKey
+    const fields = this.#validate({ ...next, apiKey: secret }, { requireKey: true })
+    if (fields) return { ok: false, code: 'VALIDATION_ERROR', fields }
+    const traceId = `provider_test_${randomUUID()}`
+    this.logger.info?.('[Provider Test]', { traceId, provider: next.name, model: next.model, stage: 'started' })
+    if (typeof this.testProvider !== 'function') return { ok: false, code: 'PROVIDER_TEST_UNAVAILABLE', traceId }
+    try {
+      const result = await this.testProvider({ ...next, apiKey: secret, traceId })
+      if (!result?.ok) return { ok: false, code: result?.code || 'PROVIDER_TEST_FAILED', message: result?.message, traceId, stage: result?.stage || 'request' }
+      const saved = providerId ? this.update({ sessionToken, providerId, ...next, apiKey: apiKey === undefined ? undefined : secret }) : this.create({ sessionToken, ...next, apiKey: secret })
+      return saved.ok ? { ...saved, traceId, test: { ok: true } } : saved
+    } catch (reason) {
+      this.logger.error?.('[Provider Test]', { traceId, provider: next.name, model: next.model, stage: 'failed', code: reason?.code || 'PROVIDER_TEST_FAILED' })
+      return { ok: false, code: reason?.code || 'PROVIDER_TEST_FAILED', message: 'Provider 测试失败，请查看追踪编号和服务器日志。', traceId, stage: 'request' }
+    }
+  }
+
+  getEnabledConfig() {
+    const config = [...this.store.configs.values()].find((candidate) => candidate.enabled)
+    if (!config) return { ok: false, code: 'PROVIDER_NOT_AVAILABLE' }
+    return {
+      ok: true,
+      provider: {
+        id: config.id,
+        name: config.name,
+        endpoint: config.endpoint,
+        model: config.model,
+        apiKey: decryptSecret(config.encryptedApiKey, this.encryptionKey),
+      },
+    }
   }
 
   #authorize(sessionToken) {

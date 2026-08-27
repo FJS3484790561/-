@@ -26,7 +26,7 @@ async function waitFor(url) {
   throw new Error(`Server did not become ready: ${url}`)
 }
 
-start(process.execPath, ['server/start-api.js'], { ADMIN_PASSWORD: adminPassword, API_PORT: '8787' })
+  start(process.execPath, ['server/start-api.js'], { ADMIN_PASSWORD: adminPassword, API_PORT: '8787', APP_ALLOWED_ORIGINS: 'http://127.0.0.1:4174' })
 const vite = await createViteServer({ server: { host: '127.0.0.1', port: 4174 } })
 await vite.listen()
 await Promise.all([waitFor(`${apiUrl}/api/health`), waitFor(baseUrl)])
@@ -34,7 +34,7 @@ await Promise.all([waitFor(`${apiUrl}/api/health`), waitFor(baseUrl)])
 const browser = await chromium.launch({ headless: true })
 const results = []
 try {
-  const register = await fetch(`${apiUrl}/api/auth/register`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'ordinary@example.com', password: userPassword }) })
+  const register = await fetch(`${apiUrl}/api/auth/register`, { method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:4174' }, body: JSON.stringify({ email: 'ordinary@example.com', password: userPassword }) })
   if (register.status !== 201) throw new Error('Could not prepare ordinary user')
 
   const permissionPage = await browser.newPage({ viewport: { width: 390, height: 844 } })

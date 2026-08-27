@@ -16,6 +16,7 @@ function encryptionKey(environment, production) {
 
 export function createRuntimeFromEnvironment({ environment = process.env, mailer, paymentProvider, generationProvider } = {}) {
   const production = environment.NODE_ENV === 'production'
+  const allowedOrigins = (environment.APP_ALLOWED_ORIGINS ?? '').split(',').map((origin) => origin.trim()).filter(Boolean)
   const filename = environment.APP_DATABASE_PATH
   if (!filename) {
     if (production) throw new Error('APP_DATABASE_PATH is required in production')
@@ -26,6 +27,7 @@ export function createRuntimeFromEnvironment({ environment = process.env, mailer
       encryptionKey: encryptionKey(environment, false),
       secureCookies: false,
       adminEmail: environment.ADMIN_EMAIL ?? 'admin@example.com',
+      allowedOrigins,
     })
   }
 
@@ -41,6 +43,7 @@ export function createRuntimeFromEnvironment({ environment = process.env, mailer
       encryptionKey: encryptionKey(environment, production),
       secureCookies: production,
       adminEmail: environment.ADMIN_EMAIL ?? 'admin@example.com',
+      allowedOrigins,
       stores: persistence,
       objectStorage,
       close: persistence.close,

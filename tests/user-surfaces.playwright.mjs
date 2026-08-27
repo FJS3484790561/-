@@ -11,24 +11,28 @@ const viewports = [
   { name: "mobile", width: 390, height: 844 },
   { name: "minimum-mobile", width: 320, height: 800 },
 ];
-const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
 const processes = [
   spawn(process.execPath, ["server/start-api.js"], {
     cwd: process.cwd(),
     stdio: "ignore",
-    env: { ...process.env, API_PORT: "8796" },
+    env: { ...process.env, API_PORT: "8796", APP_ALLOWED_ORIGINS: "http://127.0.0.1:4186" },
   }),
   spawn(
-    npmCommand,
-    ["exec", "--", "vite", "--host=127.0.0.1", "--port=4186", "--strictPort"],
+    process.execPath,
+    ["node_modules/vite/bin/vite.js", "--host=127.0.0.1", "--port=4186", "--strictPort"],
     {
       cwd: process.cwd(),
-      stdio: "ignore",
-      shell: process.platform === "win32",
+      stdio: ["ignore", "pipe", "pipe"],
       env: { ...process.env, API_ORIGIN: "http://127.0.0.1:8796" },
     },
   ),
 ];
+
+for (const process of processes) {
+  process.once("error", (error) => {
+    throw new Error(`QA child process failed: ${error.message}`);
+  });
+}
 
 for (let attempt = 0; attempt < 60; attempt += 1) {
   try {

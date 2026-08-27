@@ -1,4 +1,7 @@
 import { randomUUID } from 'node:crypto'
+import { lookup } from 'node:dns/promises'
+import { request as httpsRequest } from 'node:https'
+import { isIP } from 'node:net'
 
 const DEFAULT_MAX_IMAGE_BYTES = 10 * 1024 * 1024
 const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png'])
@@ -52,6 +55,31 @@ function imageExtension(mimeType) {
   return mimeType === 'image/png' ? 'png' : 'jpg'
 }
 
+function mappedIpv4Address(host) {
+  if (!host.startsWith('::ffff:')) return null
+  const suffix = host.slice('::ffff:'.length)
+  if (suffix.includes('.')) return suffix
+  const parts = suffix.split(':')
+  if (parts.length !== 2 || parts.some((part) => !/^[0-9a-f]{1,4}$/u.test(part))) return null
+  const value = Number.parseInt(parts[0], 16) * 0x10000 + Number.parseInt(parts[1], 16)
+  return `${value >>> 24}.${(value >>> 16) & 255}.${(value >>> 8) & 255}.${value & 255}`
+}
+
+function unsafeRemoteHost(hostname) {
+  const host = hostname.toLowerCase().replace(/\.$/u, '')
+  if (host === 'localhost' || host === 'localhost.localdomain' || host === '::1' || host === '[::1]') return true
+  if (isIP(host) === 6) {
+    const normalized = host.replace(/^\[|\]$/gu, '').toLowerCase()
+    const mapped = mappedIpv4Address(normalized)
+    if (mapped) return unsafeRemoteHost(mapped)
+    return normalized === '::' || normalized === '::1' || normalized.startsWith('fc') || normalized.startsWith('fd') || normalized.startsWith('fe8') || normalized.startsWith('fe9') || normalized.startsWith('fea') || normalized.startsWith('feb') || normalized.startsWith('::ffff:10.') || normalized.startsWith('::ffff:192.168.') || normalized.startsWith('::ffff:127.')
+  }
+  const octets = host.split('.').map(Number)
+  if (octets.length !== 4 || octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)) return false
+  const [first, second] = octets
+  return first === 10 || first === 127 || (first === 169 && second === 254) || (first === 172 && second >= 16 && second <= 31) || (first === 192 && second === 168)
+}
+
 async function responseBytes(response, maxBytes) {
   if (!response.body?.getReader) {
     const bytes = Buffer.from(await response.arrayBuffer())
@@ -72,6 +100,25 @@ async function responseBytes(response, maxBytes) {
     chunks.push(Buffer.from(value))
   }
   return Buffer.concat(chunks, size)
+}
+
+async function pinnedHttpsResponse(url, address, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const request = httpsRequest(url, {
+      lookup: (_hostname, _options, callback) => callback(null, address.address, address.family),
+      servername: url.hostname,
+      timeout: timeoutMs,
+      rejectUnauthorized: true,
+    }, (response) => {
+      const chunks = []
+      response.on('data', (chunk) => chunks.push(chunk))
+      response.on('end', () => resolve(new Response(Buffer.concat(chunks), { status: response.statusCode, headers: response.headers })))
+      response.on('error', reject)
+    })
+    request.on('timeout', () => request.destroy(new Error('Provider image download timed out')))
+    request.on('error', reject)
+    request.end()
+  })
 }
 
 export class MemoryGenerationStore {
@@ -99,7 +146,7 @@ export class ProviderRegistry {
 }
 
 export class GenerationService {
-  constructor({ authService, store = new MemoryGenerationStore(), providers = new ProviderRegistry(), providerName = 'default', clock = () => Date.now(), maxImageBytes = DEFAULT_MAX_IMAGE_BYTES, providerTimeoutMs = 30_000, creditLedger = null, objectStorage = null, fetchImpl = globalThis.fetch } = {}) {
+  constructor({ authService, store = new MemoryGenerationStore(), providers = new ProviderRegistry(), providerName = 'default', clock = () => Date.now(), maxImageBytes = DEFAULT_MAX_IMAGE_BYTES, providerTimeoutMs = 30_000, creditLedger = null, objectStorage = null, fetchImpl = globalThis.fetch, lookupImpl = lookup } = {}) {
     if (!authService) throw new Error('authService is required')
     this.authService = authService
     this.store = store
@@ -111,6 +158,7 @@ export class GenerationService {
     this.creditLedger = creditLedger
     this.objectStorage = objectStorage
     this.fetchImpl = fetchImpl
+    this.lookupImpl = lookupImpl
   }
 
   createGeneration({ sessionToken, image, params }) {
@@ -228,8 +276,21 @@ export class GenerationService {
     } catch {
       throw new Error('Provider image URL is invalid')
     }
-    if (url.protocol !== 'https:' || url.username || url.password || typeof this.fetchImpl !== 'function') throw new Error('Provider image bytes are unavailable')
-    const response = await this.fetchImpl(url, { signal: AbortSignal.timeout(this.providerTimeoutMs) })
+    if (url.protocol !== 'https:' || url.username || url.password || unsafeRemoteHost(url.hostname) || typeof this.fetchImpl !== 'function') throw new Error('Provider image bytes are unavailable')
+    let resolvedAddress = null
+    if (!isIP(url.hostname)) {
+      let addresses
+      try {
+        addresses = await this.lookupImpl(url.hostname, { all: true, verbatim: true })
+      } catch {
+        throw new Error('Provider image address is unavailable')
+      }
+      if (!addresses.length || addresses.some(({ address }) => unsafeRemoteHost(address))) throw new Error('Provider image address is unsafe')
+      resolvedAddress = addresses[0]
+    }
+    const response = this.fetchImpl === globalThis.fetch && resolvedAddress
+      ? await pinnedHttpsResponse(url, resolvedAddress, this.providerTimeoutMs)
+      : await this.fetchImpl(url, { signal: AbortSignal.timeout(this.providerTimeoutMs), redirect: 'error' })
     if (!response.ok) throw new Error('Provider image download failed')
     const contentLength = Number(response.headers.get('content-length') ?? 0)
     if (contentLength > this.maxImageBytes) throw new Error('Provider image is too large')

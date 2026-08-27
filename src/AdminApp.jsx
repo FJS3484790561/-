@@ -10,6 +10,9 @@ const copy = {
   NOT_FOUND: '该 Provider 已不存在，请刷新列表。',
   INTERNAL_ERROR: '服务暂时不可用，请稍后重试。',
   INVALID_RESPONSE: '服务返回了无法识别的响应。',
+  PROVIDER_TEST_FAILED: 'Provider 测试失败，请检查接口、模型和 API Key。',
+  INVALID_PROVIDER_RESPONSE: 'Provider 已响应，但没有返回有效图片。',
+  PROVIDER_TEST_UNAVAILABLE: 'Provider 测试服务暂不可用。',
 }
 const messageFor = (error, fallback = '操作未完成，请稍后重试。') => error instanceof TypeError ? '无法连接本地服务，请确认 API 已启动。' : copy[error?.code] || fallback
 const formatTime = (value) => new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
@@ -89,13 +92,16 @@ function ProviderForm({ provider, onClose, onSaved }) {
     const key = form.elements.apiKey.value
     const payload = { name: values.name.trim(), endpoint: values.endpoint.trim(), model: values.model.trim(), ...(key ? { apiKey: key } : {}) }
     try {
-      const result = editing ? await adminApi.updateProvider(provider.id, payload) : await adminApi.createProvider(payload)
+      console.info('[Provider Test] started', { provider: payload.name, model: payload.model })
+      const result = await adminApi.testAndSaveProvider(editing ? { ...payload, providerId: provider.id } : payload)
+      console.info('[Provider Test] completed', { traceId: result.traceId, ok: true })
       form.elements.apiKey.value = ''
       onSaved(result.provider, editing ? 'Provider 配置已更新。' : 'Provider 已创建，默认处于停用状态。')
     } catch (error) {
       form.elements.apiKey.value = ''
       setFields(error instanceof ApiError ? error.fields : {})
-      setMessage(messageFor(error))
+      console.error('[Provider Test] failed', { code: error?.code, traceId: error?.traceId, stage: error?.stage })
+      setMessage(`${messageFor(error)}${error?.traceId ? `（追踪编号：${error.traceId}）` : ''}`)
     } finally { setBusy(false) }
   }
   const field = (name, label, placeholder) => <label><span>{label}</span><input value={values[name]} onChange={(event) => setValues({ ...values, [name]: event.target.value })} placeholder={placeholder} aria-invalid={Boolean(fields[name])} aria-describedby={fields[name] ? `${name}-error` : undefined} /><small id={`${name}-error`}>{fields[name]}</small></label>
@@ -105,7 +111,7 @@ function ProviderForm({ provider, onClose, onSaved }) {
       {field('name', '名称', 'render-api')}{field('endpoint', 'API 端点', 'https://provider.example/v1')}{field('model', '模型', 'interior-v1')}
       <label><span>{editing ? '轮换密钥（可选）' : 'API 密钥'}</span><input name="apiKey" type="password" autoComplete="new-password" placeholder={editing ? '留空则保持现有密钥' : '仅用于本次保存'} aria-invalid={Boolean(fields.apiKey)} aria-describedby="key-help" /><small id="key-help">{fields.apiKey || (editing ? '现有密钥不会回填；输入新值即完成轮换。' : '保存后页面不会显示或回填密钥。')}</small></label>
       {message && <Alert kind="error">{message}</Alert>}
-      <div className="dialog-actions"><button className="text-button" type="button" onClick={onClose}>取消</button><button className="primary-button compact" type="submit" disabled={busy}>{busy && <RefreshCw className="spin" size={17} />}{busy ? '保存中' : '保存配置'}</button></div>
+      <div className="dialog-actions"><button className="text-button" type="button" onClick={onClose}>取消</button><button className="primary-button compact" type="submit" disabled={busy}>{busy && <RefreshCw className="spin" size={17} />}{busy ? '正在测试并保存' : '测试并保存'}</button></div>
     </form>
   </section></div>
 }

@@ -6,6 +6,7 @@ import { createAppHttpServer } from './http-server.js'
 
 async function call(api, path, { method = 'GET', body, cookie, contentType = 'application/json' } = {}) {
   const headers = {}
+  if (method !== 'GET') headers.origin = 'http://app.local'
   if (cookie) headers.cookie = cookie
   if (body !== undefined) headers['content-type'] = contentType
   const response = await api.handle(new Request(`http://app.local${path}`, { method, headers, ...(body !== undefined ? { body: typeof body === 'string' ? body : JSON.stringify(body) } : {}) }))
@@ -34,7 +35,7 @@ test('serves health and safe not found responses over a real HTTP server', async
     const missing = await fetch(`http://127.0.0.1:${address.port}/api/missing`)
     assert.equal(missing.status, 404)
     assert.deepEqual(await missing.json(), { ok: false, code: 'NOT_FOUND' })
-    const missingPost = await fetch(`http://127.0.0.1:${address.port}/api/missing`, { method: 'POST' })
+    const missingPost = await fetch(`http://127.0.0.1:${address.port}/api/missing`, { method: 'POST', headers: { origin: `http://127.0.0.1:${address.port}` } })
     assert.equal(missingPost.status, 404)
     assert.deepEqual(await missingPost.json(), { ok: false, code: 'NOT_FOUND' })
   } finally {

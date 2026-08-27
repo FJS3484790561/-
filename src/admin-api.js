@@ -7,6 +7,8 @@ export class ApiError extends Error {
     this.status = status
     this.code = payload.code || 'UNKNOWN_ERROR'
     this.fields = payload.fields || {}
+    this.traceId = payload.traceId
+    this.stage = payload.stage
   }
 }
 
@@ -33,6 +35,7 @@ export const adminApi = {
   listProviders: () => request('/api/admin/providers'),
   createProvider: (values) => request('/api/admin/providers', { method: 'POST', body: JSON.stringify(values) }),
   updateProvider: (providerId, values) => request(`/api/admin/providers/${encodeURIComponent(providerId)}`, { method: 'PATCH', body: JSON.stringify(values) }),
+  testAndSaveProvider: (values) => request('/api/admin/providers/test', { method: 'POST', body: JSON.stringify(values) }),
   setProviderEnabled: (providerId, enabled) => request(`/api/admin/providers/${encodeURIComponent(providerId)}/enabled`, { method: 'POST', body: JSON.stringify({ enabled }) }),
   listAudit: (providerId) => request(`/api/admin/providers/${encodeURIComponent(providerId)}/audit`),
 }
