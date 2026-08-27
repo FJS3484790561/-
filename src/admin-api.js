@@ -39,4 +39,6 @@ export const adminApi = {
   testAndSaveProvider: (values) => request('/api/admin/providers/test', { method: 'POST', body: JSON.stringify(values) }),
   setProviderEnabled: (providerId, enabled) => request(`/api/admin/providers/${encodeURIComponent(providerId)}/enabled`, { method: 'POST', body: JSON.stringify({ enabled }) }),
   listAudit: (providerId) => request(`/api/admin/providers/${encodeURIComponent(providerId)}/audit`),
+  listRedemptionCodes: () => request('/api/admin/redemption-codes'),
+  createRedemptionCode: (values) => request('/api/admin/redemption-codes', { method: 'POST', body: JSON.stringify(values) }),
 }

@@ -17,12 +17,15 @@ test('API requests use HttpOnly cookie credentials without client session tokens
   try {
     await api.session()
     await api.createGeneration({ image: { name: 'room.png', type: 'image/png', dataBase64: 'abc' }, params: { room: '客厅' } })
+    await api.redeemCode('ROOM-2345-6789-ABCD')
   } finally {
     globalThis.fetch = originalFetch
   }
   assert.equal(calls.every(({ options }) => options.credentials === 'include'), true)
   assert.deepEqual(Object.keys(JSON.parse(calls[1].options.body)).sort(), ['image', 'params'])
   assert.equal(calls[1].options.headers['content-type'], 'application/json')
+  assert.equal(calls[2].path, '/api/redemption-codes/redeem')
+  assert.deepEqual(JSON.parse(calls[2].options.body), { code: 'ROOM-2345-6789-ABCD' })
 })
 
 test('API errors expose only the safe server error code and status', async () => {

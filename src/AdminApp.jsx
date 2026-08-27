@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Activity, AlertTriangle, CheckCircle2, KeyRound, LogOut, Pencil, Plus, RefreshCw, ServerCog, ShieldCheck, X } from 'lucide-react'
+import { Activity, AlertTriangle, CheckCircle2, Copy, KeyRound, LogOut, Pencil, Plus, RefreshCw, ServerCog, ShieldCheck, Ticket, X } from 'lucide-react'
 import { adminApi, ApiError } from './admin-api'
 
 const blank = { name: '', endpoint: '', model: '' }
@@ -13,6 +13,9 @@ const copy = {
   PROVIDER_TEST_FAILED: 'Provider 测试失败，请检查接口、模型和 API Key。',
   INVALID_PROVIDER_RESPONSE: 'Provider 已响应，但没有返回有效图片。',
   PROVIDER_TEST_UNAVAILABLE: 'Provider 测试服务暂不可用。',
+  INVALID_REDEMPTION_CODE: '兑换码无效。',
+  REDEMPTION_CODE_ALREADY_USED: '该用户已经兑换过此码。',
+  REDEMPTION_CODE_EXHAUSTED: '兑换人数已达到上限。',
 }
 const messageFor = (error, fallback = '操作未完成，请稍后重试。') => error instanceof TypeError ? '无法连接本地服务，请确认 API 已启动。' : copy[error?.code] || fallback
 const formatTime = (value) => new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
@@ -135,8 +138,43 @@ function Audit({ provider, onClose }) {
   </section></div>
 }
 
-function Console({ user, initialProviders, onLogout }) {
+function RedemptionCodes({ codes, onCreated }) {
+  const [credits, setCredits] = useState(5)
+  const [maxRedemptions, setMaxRedemptions] = useState(1)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [newCode, setNewCode] = useState('')
+  async function create(event) {
+    event.preventDefault()
+    setBusy(true); setError(''); setNewCode('')
+    try {
+      const result = await adminApi.createRedemptionCode({ credits: Number(credits), maxRedemptions: Number(maxRedemptions) })
+      setNewCode(result.code)
+      onCreated(result.redemptionCode)
+    } catch (reason) {
+      setError(messageFor(reason, '兑换码生成失败，请重试。'))
+    } finally { setBusy(false) }
+  }
+  async function copyCode() {
+    try { await navigator.clipboard.writeText(newCode) } catch { setError('复制失败，请手动选择兑换码。') }
+  }
+  return <section className="provider-section redemption-section">
+    <header className="section-heading"><div><h2>兑换码管理</h2><p>设置到账点数和最多可兑换人数；每位用户只能兑换一次。</p></div><Ticket size={21} /></header>
+    <form className="redemption-form" onSubmit={create}>
+      <label><span>每人增加点数</span><input type="number" min="1" max="100000" step="1" value={credits} onChange={(event) => setCredits(event.target.value)} required /></label>
+      <label><span>最多兑换人数</span><input type="number" min="1" max="100000" step="1" value={maxRedemptions} onChange={(event) => setMaxRedemptions(event.target.value)} required /></label>
+      <button className="primary-button" type="submit" disabled={busy}>{busy ? <RefreshCw className="spin" size={17} /> : <Plus size={17} />}{busy ? '生成中' : '生成兑换码'}</button>
+    </form>
+    {error && <Alert kind="error">{error}</Alert>}
+    {newCode && <div className="new-code" role="status"><div><small>新兑换码（完整内容只显示这一次）</small><code>{newCode}</code></div><button className="secondary-button" type="button" onClick={copyCode}><Copy size={16} />复制</button></div>}
+    {!codes.length ? <div className="empty-mini">还没有生成兑换码</div> : <div className="redemption-list">{codes.map((code) => <article key={code.id}><div><strong>{code.preview}</strong><small>{formatTime(code.createdAt)}</small></div><dl><div><dt>每人点数</dt><dd>{code.credits}</dd></div><div><dt>已兑换</dt><dd>{code.redeemedCount} / {code.maxRedemptions}</dd></div><div><dt>剩余名额</dt><dd>{code.remainingRedemptions}</dd></div></dl></article>)}</div>}
+    <p className="security-note"><ShieldCheck size={16} />数据库只保存兑换码哈希，列表不会再次返回完整兑换码。</p>
+  </section>
+}
+
+function Console({ user, initialProviders, initialRedemptionCodes, onLogout }) {
   const [providers, setProviders] = useState(initialProviders)
+  const [redemptionCodes, setRedemptionCodes] = useState(initialRedemptionCodes)
   const [dialog, setDialog] = useState(null)
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
@@ -159,7 +197,7 @@ function Console({ user, initialProviders, onLogout }) {
   }
   return <main className="admin-shell">
     <header className="topbar"><Brand /><div className="account"><span><ShieldCheck size={15} />{user.email}</span><button className="icon-button" onClick={onLogout} aria-label="退出管理员账号" title="退出"><LogOut size={18} /></button></div></header>
-    <section className="console-heading"><div><span className="kicker"><Activity size={15} />系统配置</span><h1>Provider 管理</h1><p>维护生成服务的连接配置与运行状态。</p></div><button className="primary-button add-button" onClick={() => setDialog({ type: 'form' })}><Plus size={18} />新建 Provider</button></section>
+    <section className="console-heading"><div><span className="kicker"><Activity size={15} />系统配置</span><h1>运营管理</h1><p>维护图片 Provider、兑换码和用户额度发放。</p></div><button className="primary-button add-button" onClick={() => setDialog({ type: 'form' })}><Plus size={18} />新建 Provider</button></section>
     <section className="summary" aria-label="Provider 概览"><div><small>全部配置</small><strong>{providers.length}</strong></div><div><small>已启用</small><strong>{providers.filter((item) => item.enabled).length}</strong></div><div><small>密钥已配置</small><strong>{providers.filter((item) => item.apiKeyConfigured).length}</strong></div></section>
     <div className="status-region" aria-live="polite">{notice && <Alert kind="success" action={<button onClick={() => setNotice('')} aria-label="关闭成功消息"><X size={15} /></button>}>{notice}</Alert>}{error && <Alert kind="error" action={<button onClick={refresh}>重试</button>}>{error}</Alert>}</div>
     <section className="provider-section">
@@ -171,7 +209,8 @@ function Console({ user, initialProviders, onLogout }) {
         <div className="actions"><button className="text-button" onClick={() => setDialog({ type: 'audit', provider })}><Activity size={16} />审计</button><button className="text-button" onClick={() => setDialog({ type: 'form', provider })}><Pencil size={16} />编辑</button><button className={provider.enabled ? 'toggle enabled' : 'toggle'} aria-pressed={provider.enabled} disabled={busyId === provider.id} onClick={() => toggle(provider)}><span />{busyId === provider.id ? '处理中' : provider.enabled ? '停用' : '启用'}</button></div>
       </article>)}</div>}
     </section>
-    <footer><span><ShieldCheck size={15} />权限与密钥由服务器端保护</span><span>当前为本地内存环境</span></footer>
+    <RedemptionCodes codes={redemptionCodes} onCreated={(code) => setRedemptionCodes((current) => [code, ...current])} />
+    <footer><span><ShieldCheck size={15} />权限、密钥与兑换码由服务器端保护</span><span>敏感值不会回填到页面</span></footer>
     {dialog?.type === 'form' && <ProviderForm provider={dialog.provider} onClose={() => setDialog(null)} onSaved={saved} />}
     {dialog?.type === 'audit' && <Audit provider={dialog.provider} onClose={() => setDialog(null)} />}
   </main>
@@ -181,8 +220,8 @@ function App() {
   const [state, setState] = useState({ view: 'loading' })
   async function establish(user) {
     try {
-      const result = await adminApi.listProviders()
-      setState({ view: 'console', user, providers: result.providers })
+      const [providers, redemptionCodes] = await Promise.all([adminApi.listProviders(), adminApi.listRedemptionCodes()])
+      setState({ view: 'console', user, providers: providers.providers, redemptionCodes: redemptionCodes.redemptionCodes })
     } catch (error) {
       setState(error.status === 403 ? { view: 'forbidden', user } : { view: 'login' })
     }
@@ -197,7 +236,7 @@ function App() {
   }
   if (state.view === 'loading') return <main className="loading-screen" role="status"><RefreshCw className="spin" size={22} />正在恢复管理员会话</main>
   if (state.view === 'forbidden') return <Forbidden email={state.user.email} onLogout={logout} />
-  if (state.view === 'console') return <Console user={state.user} initialProviders={state.providers} onLogout={logout} />
+  if (state.view === 'console') return <Console user={state.user} initialProviders={state.providers} initialRedemptionCodes={state.redemptionCodes} onLogout={logout} />
   return <Login onAuthenticated={establish} />
 }
 

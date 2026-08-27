@@ -119,6 +119,24 @@ const MIGRATIONS = [
       }
     },
   },
+  {
+    version: 3,
+    sql: `
+      CREATE TABLE redemption_codes (
+        code_digest TEXT PRIMARY KEY,
+        code_id TEXT NOT NULL UNIQUE,
+        value_json TEXT NOT NULL
+      );
+      CREATE TABLE redemption_code_uses (
+        redemption_key TEXT PRIMARY KEY,
+        code_id TEXT NOT NULL REFERENCES redemption_codes(code_id) ON DELETE RESTRICT,
+        user_id TEXT NOT NULL REFERENCES app_users(entity_id) ON DELETE RESTRICT,
+        value_json TEXT NOT NULL,
+        UNIQUE(code_id, user_id)
+      );
+      CREATE INDEX redemption_code_uses_code ON redemption_code_uses(code_id);
+    `,
+  },
 ]
 
 const LATEST_SCHEMA_VERSION = MIGRATIONS.at(-1).version
@@ -158,10 +176,11 @@ export function openSqliteDatabase({ filename, readonly = false, targetVersion =
 export function verifySqliteDatabase(database) {
   const integrity = database.pragma('integrity_check', { simple: true })
   const foreignKeys = database.pragma('foreign_key_check')
-  const requiredTables = ['app_users', 'auth_sessions', 'password_reset_tokens', 'initialized_credit_users', 'credit_lot_groups', 'credit_reservations', 'credit_reservation_operations', 'credit_operations', 'payment_orders', 'payment_events', 'generation_tasks', 'works', 'provider_configs', 'provider_audit', 'stored_objects']
+  const requiredTables = ['app_users', 'auth_sessions', 'password_reset_tokens', 'initialized_credit_users', 'credit_lot_groups', 'credit_reservations', 'credit_reservation_operations', 'credit_operations', 'payment_orders', 'payment_events', 'generation_tasks', 'works', 'provider_configs', 'provider_audit', 'redemption_codes', 'redemption_code_uses', 'stored_objects']
   const present = new Set(database.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((row) => row.name))
   const missingTables = requiredTables.filter((name) => !present.has(name))
   const ledgerIssues = []
+  const redemptionIssues = []
   if (present.has('credit_lot_groups') && present.has('credit_reservations') && present.has('credit_operations')) {
     const groups = database.prepare('SELECT user_id, value_json FROM credit_lot_groups').all()
     const lots = new Map()
@@ -208,12 +227,28 @@ export function verifySqliteDatabase(database) {
     for (const lotId of expectedConsumed.keys()) if (!lots.has(lotId)) ledgerIssues.push(`missing-consumed-lot:${lotId}`)
     for (const lotId of grantsByLot.keys()) if (!lots.has(lotId)) ledgerIssues.push(`missing-granted-lot:${lotId}`)
   }
+  if (present.has('redemption_codes') && present.has('redemption_code_uses')) {
+    const usesByCode = new Map()
+    for (const row of database.prepare('SELECT redemption_key, code_id, user_id, value_json FROM redemption_code_uses').all()) {
+      const redemption = JSON.parse(row.value_json)
+      if (redemption.id !== row.redemption_key || redemption.codeId !== row.code_id || redemption.userId !== row.user_id) redemptionIssues.push(`redemption-column-mismatch:${row.redemption_key}`)
+      usesByCode.set(row.code_id, (usesByCode.get(row.code_id) ?? 0) + 1)
+    }
+    for (const row of database.prepare('SELECT code_id, value_json FROM redemption_codes').all()) {
+      const code = JSON.parse(row.value_json)
+      const useCount = usesByCode.get(row.code_id) ?? 0
+      if (code.id !== row.code_id || code.redeemedCount !== useCount || code.redeemedCount > code.maxRedemptions) redemptionIssues.push(`redemption-count-mismatch:${row.code_id}`)
+      usesByCode.delete(row.code_id)
+    }
+    for (const codeId of usesByCode.keys()) redemptionIssues.push(`missing-redemption-code:${codeId}`)
+  }
   return {
-    ok: integrity === 'ok' && foreignKeys.length === 0 && missingTables.length === 0 && ledgerIssues.length === 0,
+    ok: integrity === 'ok' && foreignKeys.length === 0 && missingTables.length === 0 && ledgerIssues.length === 0 && redemptionIssues.length === 0,
     integrity,
     foreignKeyViolations: foreignKeys.length,
     missingTables,
     ledgerIssues,
+    redemptionIssues,
   }
 }
 

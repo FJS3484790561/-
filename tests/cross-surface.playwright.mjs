@@ -44,20 +44,22 @@ try {
     await page.getByText('设计方案已生成，可以查看对比').waitFor()
 
     const bodyMetrics = await page.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth }))
-    const comparisonItems = page.locator('.comparison-item')
-    const boxes = await Promise.all([comparisonItems.nth(0).boundingBox(), comparisonItems.nth(1).boundingBox()])
-    const comparisonItemsSideBySide = boxes.every(Boolean) && boxes[0].x < boxes[1].x
-    const comparisonImagesUseContain = await page.locator('.comparison-image-frame img').evaluateAll((images) => images.every((image) => getComputedStyle(image).objectFit === 'contain'))
+    const slider = page.locator('.comparison-slider')
+    const sliderBox = await slider.boundingBox()
+    const baseBox = await slider.locator('.comparison-base').boundingBox()
+    const afterBox = await slider.locator('.comparison-after-layer img').boundingBox()
+    const comparisonUsesFullWidth = sliderBox && baseBox && afterBox && Math.abs(sliderBox.width - baseBox.width) < 1 && Math.abs(sliderBox.width - afterBox.width) < 1
+    const comparisonFollowsImageHeight = sliderBox && baseBox && Math.abs(sliderBox.height - baseBox.height) < 1
 
     const result = {
       viewport: viewport.name,
       noHorizontalOverflow: bodyMetrics.scrollWidth <= bodyMetrics.clientWidth,
-      comparisonItemsSideBySide,
-      comparisonImagesUseContain,
+      comparisonUsesFullWidth,
+      comparisonFollowsImageHeight,
       consoleErrors,
     }
     results.push(result)
-    if (!result.noHorizontalOverflow || !result.comparisonItemsSideBySide || !result.comparisonImagesUseContain || result.consoleErrors.length) process.exitCode = 1
+    if (!result.noHorizontalOverflow || !result.comparisonUsesFullWidth || !result.comparisonFollowsImageHeight || result.consoleErrors.length) process.exitCode = 1
     await page.close()
   }
 } finally {

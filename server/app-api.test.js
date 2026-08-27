@@ -116,6 +116,25 @@ test('protects administrator provider routes and redacts secrets', async () => {
   assert.equal(JSON.stringify(audit.data).includes(secret), false)
 })
 
+test('lets administrators issue limited redemption codes and users redeem them once', async () => {
+  const runtime = createAppRuntime()
+  assert.equal((await runtime.provisionAdmin({ password: 'correct-horse' })).ok, true)
+  const adminCookie = await login(runtime.api, 'admin@example.com')
+  const userCookie = await registerAndLogin(runtime.api, 'redeem@example.com')
+  const otherCookie = await registerAndLogin(runtime.api, 'redeem-other@example.com')
+  const created = await call(runtime.api, '/api/admin/redemption-codes', { method: 'POST', cookie: adminCookie, body: { credits: 4, maxRedemptions: 1 } })
+  assert.equal(created.response.status, 201)
+  assert.match(created.data.code, /^ROOM-/u)
+  const list = await call(runtime.api, '/api/admin/redemption-codes', { cookie: adminCookie })
+  assert.equal(JSON.stringify(list.data).includes(created.data.code), false)
+  assert.equal((await call(runtime.api, '/api/admin/redemption-codes', { cookie: userCookie })).response.status, 403)
+  const redeemed = await call(runtime.api, '/api/redemption-codes/redeem', { method: 'POST', cookie: userCookie, body: { code: created.data.code } })
+  assert.equal(redeemed.data.creditsAdded, 4)
+  assert.equal(redeemed.data.available, 7)
+  assert.equal((await call(runtime.api, '/api/redemption-codes/redeem', { method: 'POST', cookie: userCookie, body: { code: created.data.code } })).response.status, 409)
+  assert.equal((await call(runtime.api, '/api/redemption-codes/redeem', { method: 'POST', cookie: otherCookie, body: { code: created.data.code } })).data.code, 'REDEMPTION_CODE_EXHAUSTED')
+})
+
 test('rejects a failed Provider test without saving configuration or consuming user state', async () => {
   const runtime = createAppRuntime({ providerTester: async () => ({ ok: false, code: 'PROVIDER_TEST_FAILED', stage: 'response', httpStatus: 401 }) })
   assert.equal((await runtime.provisionAdmin({ password: 'correct-horse' })).ok, true)

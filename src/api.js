@@ -33,6 +33,7 @@ export const api = {
   requestPasswordReset: (email) => post('/api/auth/password-reset/request', { email }),
   resetPassword: (token, password) => post('/api/auth/password-reset/confirm', { token, password }),
   credits: () => request('/api/credits'),
+  redeemCode: (code) => post('/api/redemption-codes/redeem', { code }),
   createGeneration: (payload) => post('/api/generations', payload),
   generation: (id) => request(`/api/generations/${encodeURIComponent(id)}`),
   works: () => request('/api/works'),

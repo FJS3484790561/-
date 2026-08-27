@@ -45,6 +45,9 @@ const errorCopy = {
   FILE_READ_FAILED: "无法读取这张图片，请重新选择。",
   INVALID_RESPONSE: "服务响应异常，请稍后重试。",
   NETWORK_ERROR: "无法连接本地服务，请确认服务已启动。",
+  INVALID_REDEMPTION_CODE: "兑换码无效，请检查后重试。",
+  REDEMPTION_CODE_ALREADY_USED: "这个兑换码你已经使用过了。",
+  REDEMPTION_CODE_EXHAUSTED: "这个兑换码的可兑换人数已用完。",
 };
 
 function messageFor(error, fallback = "操作未完成，请稍后重试。") {
@@ -262,29 +265,25 @@ function SelectField({ label, value, options, onChange }) {
 }
 
 function Comparison({ before, after }) {
+  const [position, setPosition] = useState(50);
   return (
     <section className="comparison-block" aria-labelledby="comparison-title">
       <div className="comparison-heading">
         <div>
           <span className="section-kicker">03 / 效果对比</span>
-          <h3 id="comparison-title">左右并排，完整查看空间变化</h3>
+          <h3 id="comparison-title">拖动滑块，对比空间变化</h3>
         </div>
-        <span>图片保持原比例，不裁剪</span>
+        <span>完整画面，自适应图片比例</span>
       </div>
-      <div className="comparison-stage">
-        <figure className="comparison-item comparison-before">
-          <div className="comparison-image-frame">
-            <img src={before} alt="改造之前的房间" />
-          </div>
-          <figcaption>改造之前</figcaption>
-        </figure>
-        <figure className="comparison-item comparison-after">
-          <div className="comparison-image-frame">
-            <img src={after} alt="改造之后的房间" />
-          </div>
-          <figcaption>改造之后</figcaption>
-        </figure>
-      </div>
+      <figure className="comparison-slider" style={{ "--comparison-position": `${position}%` }}>
+        <img className="comparison-base" src={before} alt="改造之前的房间" />
+        <div className="comparison-after-layer" aria-hidden="true"><img src={after} alt="" /></div>
+        <span className="comparison-side-label comparison-left-label">改造之前</span>
+        <span className="comparison-side-label comparison-right-label">改造之后</span>
+        <span className="comparison-divider" aria-hidden="true"><span>↔</span></span>
+        <label className="visually-hidden" htmlFor="comparison-range">调整改造前后图片的分界位置</label>
+        <input id="comparison-range" className="comparison-range" type="range" min="0" max="100" value={position} onChange={(event) => setPosition(Number(event.target.value))} />
+      </figure>
     </section>
   );
 }
@@ -377,15 +376,21 @@ function Workbench({ credits, refreshCredits, onSaved }) {
       });
       setTask(completed);
       const totalClientMs = Date.now() - submittedAt;
+      const providerMs = completed.timings?.providerMs ?? null;
+      const serverTotalMs = completed.timings?.serverTotalMs ?? null;
       console.info("[Generation Timing]", {
         traceId: completed.traceId ?? completed.id,
         totalClientMs,
         uploadAndTaskCreateMs,
         clientPollingMs: Math.max(0, totalClientMs - uploadAndTaskCreateMs),
-        providerMs: completed.timings?.providerMs ?? null,
+        providerMs,
         nonProviderServerMs: completed.timings?.nonProviderMs ?? null,
-        serverTotalMs: completed.timings?.serverTotalMs ?? null,
+        serverTotalMs,
+        totalOutsideProviderMs: Number.isFinite(providerMs) ? Math.max(0, totalClientMs - providerMs) : null,
+        clientAndNetworkMs: Number.isFinite(serverTotalMs) ? Math.max(0, totalClientMs - serverTotalMs) : null,
         originalStoreMs: completed.timings?.originalStoreMs ?? null,
+        resultDownloadMs: completed.timings?.resultDownloadMs ?? null,
+        resultUploadMs: completed.timings?.resultUploadMs ?? null,
         resultStoreMs: completed.timings?.resultStoreMs ?? null,
         creditSettlementMs: completed.timings?.creditSettlementMs ?? null,
       });
@@ -816,6 +821,8 @@ function CreditsPage({ credits, refreshCredits }) {
   const [order, setOrder] = useState(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState(null);
+  const [redemptionCode, setRedemptionCode] = useState("");
+  const [redeeming, setRedeeming] = useState(false);
   const createOrder = async (amount) => {
     setBusy(true);
     setNotice(null);
@@ -830,6 +837,23 @@ function CreditsPage({ credits, refreshCredits }) {
       setNotice({ tone: "error", text: messageFor(error) });
     } finally {
       setBusy(false);
+    }
+  };
+  const redeem = async (event) => {
+    event.preventDefault();
+    const code = redemptionCode.trim();
+    if (!code) return;
+    setRedeeming(true);
+    setNotice(null);
+    try {
+      const result = await api.redeemCode(code);
+      setRedemptionCode("");
+      setNotice({ tone: "success", text: `兑换成功，已增加 ${result.creditsAdded} 点额度。` });
+      await refreshCredits();
+    } catch (error) {
+      setNotice({ tone: "error", text: messageFor(error, "兑换失败，请检查兑换码。") });
+    } finally {
+      setRedeeming(false);
     }
   };
   return (
@@ -898,6 +922,11 @@ function CreditsPage({ credits, refreshCredits }) {
               创建订单
             </button>
           </div>
+          <form className="redeem-card clay-surface" onSubmit={redeem}>
+            <div><h3>兑换码</h3><p>输入管理员发放的兑换码，额度会立即到账。</p></div>
+            <label className="input-field compact-input"><span>兑换码</span><input value={redemptionCode} onChange={(event) => setRedemptionCode(event.target.value.toUpperCase())} autoComplete="off" placeholder="ROOM-XXXX-XXXX-XXXX" /></label>
+            <button className="secondary-button" type="submit" disabled={redeeming || !redemptionCode.trim()}>{redeeming ? "兑换中…" : "立即兑换"}</button>
+          </form>
         </div>
         <aside className="order-panel clay-surface">
           <h2>订单状态</h2>

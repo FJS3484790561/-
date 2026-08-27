@@ -7,7 +7,7 @@ test('admin client uses only the approved HTTP routes and same-origin cookies', 
   const previousFetch = globalThis.fetch
   globalThis.fetch = async (path, options) => {
     calls.push({ path, options })
-    return new Response(JSON.stringify({ ok: true, providers: [], provider: {}, audit: [] }), { headers: { 'content-type': 'application/json' } })
+    return new Response(JSON.stringify({ ok: true, providers: [], provider: {}, audit: [], redemptionCodes: [], redemptionCode: {}, code: 'ROOM-2345-6789-ABCD' }), { headers: { 'content-type': 'application/json' } })
   }
   t.after(() => { globalThis.fetch = previousFetch })
   await adminApi.listProviders()
@@ -15,12 +15,16 @@ test('admin client uses only the approved HTTP routes and same-origin cookies', 
   await adminApi.updateProvider('provider/a', { model: 'v2' })
   await adminApi.setProviderEnabled('provider/a', true)
   await adminApi.listAudit('provider/a')
+  await adminApi.listRedemptionCodes()
+  await adminApi.createRedemptionCode({ credits: 5, maxRedemptions: 10 })
   assert.deepEqual(calls.map((call) => call.path), [
     '/api/admin/providers',
     '/api/admin/providers',
     '/api/admin/providers/provider%2Fa',
     '/api/admin/providers/provider%2Fa/enabled',
     '/api/admin/providers/provider%2Fa/audit',
+    '/api/admin/redemption-codes',
+    '/api/admin/redemption-codes',
   ])
   assert.ok(calls.every((call) => call.options.credentials === 'same-origin'))
   assert.equal(calls.some((call) => call.options.body?.includes('sessionToken')), false)

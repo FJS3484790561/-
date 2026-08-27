@@ -89,18 +89,15 @@ try {
       .setInputFiles({ name: "room.png", mimeType: "image/png", buffer: png });
     await page.getByRole("button", { name: /生成设计/ }).click();
     await page.getByText("设计方案已生成").waitFor();
-    const comparisonItems = page.locator(".comparison-item");
-    const comparisonBoxes = await Promise.all([
-      comparisonItems.nth(0).boundingBox(),
-      comparisonItems.nth(1).boundingBox(),
-    ]);
-    const comparisonItemsSideBySide =
-      comparisonBoxes.every(Boolean) && comparisonBoxes[0].x < comparisonBoxes[1].x;
-    const comparisonImagesUseContain = await page
-      .locator(".comparison-image-frame img")
-      .evaluateAll((images) =>
-        images.every((image) => getComputedStyle(image).objectFit === "contain"),
-      );
+    const slider = page.locator(".comparison-slider");
+    const sliderBox = await slider.boundingBox();
+    const baseBox = await slider.locator(".comparison-base").boundingBox();
+    const afterBox = await slider.locator(".comparison-after-layer img").boundingBox();
+    const comparisonUsesFullWidth = sliderBox && baseBox && afterBox && Math.abs(sliderBox.width - baseBox.width) < 1 && Math.abs(sliderBox.width - afterBox.width) < 1;
+    const comparisonFollowsImageHeight = sliderBox && baseBox && Math.abs(sliderBox.height - baseBox.height) < 1;
+    await page.getByLabel("调整改造前后图片的分界位置").fill("70");
+    const dividerBox = await slider.locator(".comparison-divider").boundingBox();
+    const comparisonSliderMoves = sliderBox && dividerBox && Math.abs((dividerBox.x - sliderBox.x) / sliderBox.width - 0.7) < 0.02;
     await page.getByRole("button", { name: "保存作品" }).click();
     await page.getByText("作品已保存到“我的作品”。").waitFor();
 
@@ -132,16 +129,18 @@ try {
     const result = {
       viewport: viewport.name,
       noHorizontalOverflow: metrics.scrollWidth <= metrics.clientWidth,
-      comparisonItemsSideBySide,
-      comparisonImagesUseContain,
+      comparisonUsesFullWidth,
+      comparisonFollowsImageHeight,
+      comparisonSliderMoves,
       expectedUnauthorizedResponses: expectedUnauthorizedResponses.length,
       unexpectedConsoleErrors,
     };
     results.push(result);
     if (
       !result.noHorizontalOverflow ||
-      !result.comparisonItemsSideBySide ||
-      !result.comparisonImagesUseContain ||
+      !result.comparisonUsesFullWidth ||
+      !result.comparisonFollowsImageHeight ||
+      !result.comparisonSliderMoves ||
       unexpectedConsoleErrors.length
     )
       process.exitCode = 1;

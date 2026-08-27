@@ -63,7 +63,7 @@ function waitForWorkerMessage(worker, expectedType) {
   })
 }
 
-test('persists accounts, sessions, credits, orders, generations, works and provider configuration across a real reopen', async (context) => {
+test('persists accounts, sessions, credits, orders, generations, works, providers and redemption codes across a real reopen', async (context) => {
   const root = await mkdtemp(join(tmpdir(), 'interior-persistence-'))
   context.after(() => rm(root, { recursive: true, force: true }))
   const filename = join(root, 'app.sqlite')
@@ -106,16 +106,21 @@ test('persists accounts, sessions, credits, orders, generations, works and provi
   const provider = await runtime.adminProviderService.create({ sessionToken: adminLogin.sessionToken, name: 'primary', endpoint: 'https://provider.example.test', model: 'interior-v1', apiKey: 'test-key' })
   assert.equal(provider.ok, true)
   assert.equal(runtime.adminProviderService.setEnabled({ sessionToken: adminLogin.sessionToken, providerId: provider.provider.id, enabled: true }).ok, true)
+  const redemptionCode = runtime.redemptionCodeService.create({ sessionToken: adminLogin.sessionToken, credits: 6, maxRedemptions: 2 })
+  assert.equal(redemptionCode.ok, true)
+  assert.equal(runtime.redemptionCodeService.redeem({ sessionToken: userLogin.sessionToken, code: redemptionCode.code }).available, 20)
   runtime.close()
 
   stores = createSqliteStores({ filename })
   runtime = runtimeFor(stores, join(root, 'objects'))
   assert.equal(runtime.authService.getSession(userLogin.sessionToken).email, 'user@example.com')
-  assert.equal(runtime.creditLedger.getBalance({ sessionToken: userLogin.sessionToken }).available, 14)
+  assert.equal(runtime.creditLedger.getBalance({ sessionToken: userLogin.sessionToken }).available, 20)
   assert.equal(runtime.paymentService.getOrder({ sessionToken: userLogin.sessionToken, orderId: order.order.id }).order.status, 'paid')
   assert.equal(runtime.generationService.getGeneration({ sessionToken: userLogin.sessionToken, taskId: generation.task.id }).task.status, 'succeeded')
   assert.equal(runtime.worksService.get({ sessionToken: userLogin.sessionToken, workId: work.work.id }).work.id, work.work.id)
   assert.equal(runtime.adminProviderService.readSecretForProvider({ providerId: provider.provider.id }).apiKey, 'test-key')
+  assert.equal(runtime.redemptionCodeService.list({ sessionToken: adminLogin.sessionToken }).redemptionCodes[0].redeemedCount, 1)
+  assert.equal(runtime.redemptionCodeService.redeem({ sessionToken: userLogin.sessionToken, code: redemptionCode.code }).code, 'REDEMPTION_CODE_ALREADY_USED')
   runtime.close()
 })
 
@@ -306,7 +311,7 @@ test('reapplying migrations is idempotent and preserves the credit journal', asy
   runtime.close()
   for (let attempt = 0; attempt < 2; attempt += 1) {
     stores = createSqliteStores({ filename })
-    assert.deepEqual(stores.database.prepare('SELECT version FROM schema_migrations ORDER BY version').all().map((row) => row.version), [1, 2])
+    assert.deepEqual(stores.database.prepare('SELECT version FROM schema_migrations ORDER BY version').all().map((row) => row.version), [1, 2, 3])
     assert.equal(stores.database.prepare('SELECT COUNT(*) AS count FROM credit_operations').get().count, 1)
     assert.equal(verifySqliteDatabase(stores.database).ok, true)
     stores.close()
@@ -329,7 +334,7 @@ test('upgrades a populated v1 credit database and backfills its journal', async 
   v1.close()
 
   const upgraded = openSqliteDatabase({ filename })
-  assert.deepEqual(upgraded.prepare('SELECT version FROM schema_migrations ORDER BY version').all().map((row) => row.version), [1, 2])
+  assert.deepEqual(upgraded.prepare('SELECT version FROM schema_migrations ORDER BY version').all().map((row) => row.version), [1, 2, 3])
   assert.deepEqual(upgraded.prepare('SELECT operation_type FROM credit_operations ORDER BY occurred_at').all().map((row) => row.operation_type), ['grant', 'reserve', 'settle'])
   assert.equal(upgraded.prepare('SELECT COUNT(*) AS count FROM credit_reservation_operations').get().count, 1)
   assert.equal(verifySqliteDatabase(upgraded).ok, true)

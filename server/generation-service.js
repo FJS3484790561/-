@@ -245,14 +245,18 @@ export class GenerationService {
         const resultStoreStartedAt = Date.now()
         let result
         try {
+          const resultDownloadStartedAt = Date.now()
           result = await this.#providerImageBytes(output.effectImage)
+          task.timings.resultDownloadMs = Date.now() - resultDownloadStartedAt
         } catch (reason) {
           const failure = reason instanceof Error ? reason : new Error('Provider result download failed')
           failure.code = 'RESULT_DOWNLOAD_FAILED'
           failure.stage = 'result-download'
           throw failure
         }
+        const resultUploadStartedAt = Date.now()
         const stored = await this.#storeImage(task, 'result', result)
+        task.timings.resultUploadMs = Date.now() - resultUploadStartedAt
         task.timings.resultStoreMs = Date.now() - resultStoreStartedAt
         effectImage = { url: this.#objectUrl(stored.key), objectKey: stored.key, mimeType: stored.mimeType }
         this.logger.info?.('[Generation]', { traceId: task.traceId, stage: 'result-stored', elapsedMs: task.timings.resultStoreMs })

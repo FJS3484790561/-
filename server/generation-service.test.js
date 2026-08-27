@@ -115,6 +115,10 @@ test('downloads a remote provider result into protected object storage', async (
   assert.match(result.result.effectImage.url, /^\/api\/objects\//u)
   assert.equal(result.result.effectImage.url.includes('provider.example.test'), false)
   assert.deepEqual(stored[1].body, jpeg)
+  assert.equal(Number.isFinite(result.timings.resultDownloadMs), true)
+  assert.equal(Number.isFinite(result.timings.resultUploadMs), true)
+  assert.ok(result.timings.resultStoreMs >= result.timings.resultDownloadMs)
+  assert.ok(result.timings.resultStoreMs >= result.timings.resultUploadMs)
 })
 
 test('rejects private provider result addresses before fetching', async () => {

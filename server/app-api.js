@@ -19,6 +19,8 @@ const RATE_LIMIT_MAX = 30
   PROVIDER_TEST_FAILED: 502,
   INVALID_PROVIDER_RESPONSE: 502,
   PROVIDER_TEST_UNAVAILABLE: 503,
+  REDEMPTION_CODE_ALREADY_USED: 409,
+  REDEMPTION_CODE_EXHAUSTED: 409,
 }
 
 function json(data, status = 200, headers = {}) {
@@ -81,14 +83,15 @@ function decodeImage(image) {
 }
 
 export class AppApi {
-  constructor({ authService, generationService, creditLedger, paymentService, worksService, adminProviderService, objectStorage = null, maxJsonBytes = DEFAULT_MAX_JSON_BYTES, secureCookies = false, allowedOrigins = [] } = {}) {
-    if (!authService || !generationService || !creditLedger || !paymentService || !worksService || !adminProviderService) throw new Error('all application services are required')
+  constructor({ authService, generationService, creditLedger, paymentService, worksService, adminProviderService, redemptionCodeService, objectStorage = null, maxJsonBytes = DEFAULT_MAX_JSON_BYTES, secureCookies = false, allowedOrigins = [] } = {}) {
+    if (!authService || !generationService || !creditLedger || !paymentService || !worksService || !adminProviderService || !redemptionCodeService) throw new Error('all application services are required')
     this.authService = authService
     this.generationService = generationService
     this.creditLedger = creditLedger
     this.paymentService = paymentService
     this.worksService = worksService
     this.adminProviderService = adminProviderService
+    this.redemptionCodeService = redemptionCodeService
     this.objectStorage = objectStorage
     this.maxJsonBytes = maxJsonBytes
     this.secureCookies = secureCookies
@@ -167,6 +170,7 @@ export class AppApi {
     }
 
     if (method === 'GET' && pathname === '/api/credits') return safeResult(this.creditLedger.getBalance({ sessionToken }))
+    if (method === 'POST' && pathname === '/api/redemption-codes/redeem') return withJsonBody((body) => safeResult(this.redemptionCodeService.redeem({ sessionToken, code: body.code })))
     if (method === 'POST' && pathname === '/api/orders') return withJsonBody((body) => safeResult(this.paymentService.createOrder({ sessionToken, amountYuan: body.amountYuan }), 201))
     const orderMatch = pathname.match(/^\/api\/orders\/([^/]+)$/u)
     if (method === 'GET' && orderMatch) return safeResult(this.paymentService.getOrder({ sessionToken, orderId: decodeURIComponent(orderMatch[1]) }))
@@ -178,6 +182,8 @@ export class AppApi {
     if (method === 'GET' && workMatch) return safeResult(this.worksService.get({ sessionToken, workId: decodeURIComponent(workMatch[1]) }))
 
     if (method === 'GET' && pathname === '/api/admin/providers') return safeResult(this.adminProviderService.list({ sessionToken }))
+    if (method === 'GET' && pathname === '/api/admin/redemption-codes') return safeResult(this.redemptionCodeService.list({ sessionToken }))
+    if (method === 'POST' && pathname === '/api/admin/redemption-codes') return withJsonBody((body) => safeResult(this.redemptionCodeService.create({ sessionToken, credits: body.credits, maxRedemptions: body.maxRedemptions }), 201))
     if (method === 'POST' && pathname === '/api/admin/providers') return withJsonBody(async (body) => safeResult(await this.adminProviderService.create({ ...body, sessionToken }), 201))
     const auditMatch = pathname.match(/^\/api\/admin\/providers\/([^/]+)\/audit$/u)
     if (method === 'GET' && auditMatch) return safeResult(this.adminProviderService.listAudit({ sessionToken, providerId: decodeURIComponent(auditMatch[1]) }))
