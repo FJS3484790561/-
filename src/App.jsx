@@ -371,10 +371,19 @@ function Workbench({ credits, refreshCredits, onSaved }) {
     setStatus("creating");
     setNotice(null);
     setSaved(false);
+    const submittedAt = Date.now();
+    console.info("[Generation]", { stage: "submit-started" });
     try {
       const created = await api.createGeneration({
         image: image.payload,
         params,
+      });
+      console.info("[Generation]", {
+        stage: "task-created",
+        traceId: created.task.traceId ?? created.task.id,
+        taskId: created.task.id,
+        status: created.task.status,
+        elapsedMs: Date.now() - submittedAt,
       });
       setTask(created.task);
       setStatus("polling");
@@ -395,7 +404,17 @@ function Workbench({ credits, refreshCredits, onSaved }) {
         });
       }
     } catch (error) {
-      if (error?.name === "AbortError") return;
+      if (error?.name === "AbortError") {
+        console.info("[Generation]", { stage: "aborted", elapsedMs: Date.now() - submittedAt });
+        return;
+      }
+      console.error("[Generation]", {
+        stage: "client-failed",
+        traceId: task?.traceId ?? task?.id,
+        code: error?.code ?? "GENERATION_FAILED",
+        httpStatus: error?.status ?? 0,
+        elapsedMs: Date.now() - submittedAt,
+      });
       setStatus("failed");
       setNotice({
         tone: "error",

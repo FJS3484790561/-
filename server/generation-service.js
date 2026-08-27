@@ -146,7 +146,7 @@ export class ProviderRegistry {
 }
 
 export class GenerationService {
-  constructor({ authService, store = new MemoryGenerationStore(), providers = new ProviderRegistry(), providerName = 'default', clock = () => Date.now(), maxImageBytes = DEFAULT_MAX_IMAGE_BYTES, providerTimeoutMs = 30_000, creditLedger = null, objectStorage = null, fetchImpl = globalThis.fetch, lookupImpl = lookup, logger = console } = {}) {
+  constructor({ authService, store = new MemoryGenerationStore(), providers = new ProviderRegistry(), providerName = 'default', clock = () => Date.now(), maxImageBytes = DEFAULT_MAX_IMAGE_BYTES, providerTimeoutMs = 70_000, creditLedger = null, objectStorage = null, fetchImpl = globalThis.fetch, lookupImpl = lookup, logger = console } = {}) {
     if (!authService) throw new Error('authService is required')
     this.authService = authService
     this.store = store

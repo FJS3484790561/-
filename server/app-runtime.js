@@ -115,7 +115,9 @@ export function configuredGenerationProvider({ adminProviderService, fallback, f
       const configured = adminProviderService.getEnabledConfig()
       if (!configured.ok) return fallback.generate({ image, params, traceId })
       const provider = configured.provider
-      logger.info?.('[Generation]', { traceId, stage: 'provider-request', provider: provider.name, model: provider.model })
+      const startedAt = Date.now()
+      const protocol = providerProtocol(provider.endpoint)
+      logger.info?.('[Generation]', { traceId, stage: 'provider-request', provider: provider.name, model: provider.model, protocol })
       try {
         const request = imageProviderRequest({ endpoint: provider.endpoint, model: provider.model, image, prompt: generationPrompt(params), apiKey: provider.apiKey, traceId })
         const response = await fetchImpl(provider.endpoint, {
@@ -124,7 +126,7 @@ export function configuredGenerationProvider({ adminProviderService, fallback, f
           signal: AbortSignal.timeout(timeoutMs),
           redirect: 'error',
         })
-        logger.info?.('[Generation]', { traceId, stage: 'provider-response', provider: provider.name, model: provider.model, httpStatus: response.status })
+        logger.info?.('[Generation]', { traceId, stage: 'provider-response', provider: provider.name, model: provider.model, protocol, httpStatus: response.status, elapsedMs: Date.now() - startedAt })
         if (!response.ok) throw diagnosticError('Provider request failed', { code: 'PROVIDER_HTTP_ERROR', stage: 'response', httpStatus: response.status })
         let payload
         try { payload = await response.json() } catch { throw diagnosticError('Provider response was not JSON', { code: 'INVALID_PROVIDER_RESPONSE', stage: 'parse', httpStatus: response.status }) }
@@ -135,7 +137,7 @@ export function configuredGenerationProvider({ adminProviderService, fallback, f
       } catch (reason) {
         const timeout = reason?.name === 'TimeoutError' || reason?.code === 'ABORT_ERR'
         const failure = timeout ? diagnosticError('Provider request timed out', { code: 'PROVIDER_TIMEOUT', stage: 'request' }) : reason
-        logger.error?.('[Generation]', { traceId, stage: failure?.stage ?? 'request', provider: provider.name, model: provider.model, code: failure?.code ?? 'PROVIDER_REQUEST_FAILED', ...(failure?.httpStatus ? { httpStatus: failure.httpStatus } : {}) })
+        logger.error?.('[Generation]', { traceId, stage: failure?.stage ?? 'request', provider: provider.name, model: provider.model, protocol, code: failure?.code ?? 'PROVIDER_REQUEST_FAILED', elapsedMs: Date.now() - startedAt, ...(failure?.httpStatus ? { httpStatus: failure.httpStatus } : {}) })
         throw failure
       }
     },

@@ -58,10 +58,30 @@ export function fileToImage(file) {
 }
 
 export async function pollGeneration(id, { interval = 350, signal, onUpdate } = {}) {
+  const startedAt = Date.now()
+  let attempt = 0
+  let lastStatus = null
+  console.info('[Generation]', { stage: 'polling-started', traceId: id })
   while (!signal?.aborted) {
-    const { task } = await api.generation(id)
+    attempt += 1
+    let task
+    try {
+      ({ task } = await api.generation(id))
+    } catch (error) {
+      console.error('[Generation]', { stage: 'polling-request-failed', traceId: id, attempt, elapsedMs: Date.now() - startedAt, code: error?.code ?? 'REQUEST_FAILED', httpStatus: error?.status ?? 0 })
+      throw error
+    }
     onUpdate?.(task)
-    if (task.status === 'succeeded' || task.status === 'failed') return task
+    if (task.status !== lastStatus || attempt % 10 === 0) {
+      console.info('[Generation]', { stage: 'polling', traceId: task.traceId ?? id, taskId: id, status: task.status, attempt, elapsedMs: Date.now() - startedAt })
+      lastStatus = task.status
+    }
+    if (task.status === 'succeeded' || task.status === 'failed') {
+      const details = { stage: task.status, traceId: task.traceId ?? id, taskId: id, attempt, elapsedMs: Date.now() - startedAt }
+      if (task.status === 'failed') console.error('[Generation]', { ...details, code: task.error?.code ?? 'GENERATION_FAILED' })
+      else console.info('[Generation]', details)
+      return task
+    }
     await new Promise((resolve, reject) => {
       const timeout = window.setTimeout(resolve, interval)
       signal?.addEventListener('abort', () => {
@@ -70,5 +90,6 @@ export async function pollGeneration(id, { interval = 350, signal, onUpdate } = 
       }, { once: true })
     })
   }
+  console.info('[Generation]', { stage: 'polling-aborted', traceId: id, attempt, elapsedMs: Date.now() - startedAt })
   throw new DOMException('Aborted', 'AbortError')
 }
