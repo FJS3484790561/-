@@ -1,6 +1,6 @@
 import COS from 'cos-nodejs-sdk-v5'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { dirname, resolve } from 'node:path'
+import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 
 function safeObjectKey(key) {
   const normalized = String(key ?? '').replaceAll('\\', '/').replace(/^\/+/, '')
@@ -20,7 +20,8 @@ export class LocalObjectStorage {
     const objectKey = safeObjectKey(key)
     const bytes = Buffer.from(body)
     const destination = resolve(this.root, ...objectKey.split('/'))
-    if (!destination.startsWith(`${this.root}\\`) && destination !== this.root) throw new Error('Invalid object key')
+    const relativeDestination = relative(this.root, destination)
+    if (!relativeDestination || relativeDestination === '..' || relativeDestination.startsWith(`..${sep}`) || isAbsolute(relativeDestination)) throw new Error('Invalid object key')
     await mkdir(dirname(destination), { recursive: true })
     await writeFile(destination, bytes, { flag: 'wx' })
     const record = { key: objectKey, ownerId, mimeType, sizeBytes: bytes.length, createdAt: this.clock(), metadata }
