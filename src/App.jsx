@@ -20,16 +20,22 @@ import {
   X,
 } from "lucide-react";
 import { ApiError, api, fileToImage, pollGeneration, styleReferenceFor } from "./api";
-import uploadGood from "./assets/upload-good.svg";
-import uploadBad from "./assets/upload-bad.svg";
+import styleModernMinimal from "./assets/style-modern-minimal.jpg";
+import styleScandinavian from "./assets/style-scandinavian.jpg";
+import styleJapanese from "./assets/style-japanese.jpg";
+import styleCream from "./assets/style-cream.jpg";
+import styleNaturalWood from "./assets/style-natural-wood.jpg";
+import styleLightLuxury from "./assets/style-light-luxury.jpg";
+import uploadGoodPhoto from "./assets/upload-good.jpg";
+import uploadBadPhoto from "./assets/upload-bad.jpg";
 
 const themes = [
-  { name: "现代简约", colors: ["#f5f1eb", "#b7a58f"], description: "克制、明亮、线条利落" },
-  { name: "北欧", colors: ["#f4f0e8", "#9eb7a2"], description: "自然、轻盈、舒适" },
-  { name: "日式", colors: ["#eee8db", "#bd9670"], description: "留白、木质、宁静" },
-  { name: "奶油风", colors: ["#fff0d8", "#d8a77c"], description: "柔和、圆润、温暖" },
-  { name: "原木风", colors: ["#efe4d0", "#9b6e48"], description: "自然、质朴、有温度" },
-  { name: "轻奢", colors: ["#eee9e2", "#aa8d68"], description: "精致、沉稳、有层次" },
+  { name: "现代简约", image: styleModernMinimal, description: "克制、明亮、线条利落" },
+  { name: "北欧", image: styleScandinavian, description: "自然、轻盈、舒适" },
+  { name: "日式", image: styleJapanese, description: "留白、木质、宁静" },
+  { name: "奶油风", image: styleCream, description: "柔和、圆润、温暖" },
+  { name: "原木风", image: styleNaturalWood, description: "自然、质朴、有温度" },
+  { name: "轻奢", image: styleLightLuxury, description: "精致、沉稳、有层次" },
 ];
 const rooms = ["客厅", "卧室", "餐厅", "厨房", "书房"];
 const packs = [
@@ -298,7 +304,7 @@ function Comparison({ before, after }) {
 function ThemePicker({ value, onChange }) {
   return <div className="field"><span>设计风格 · 图片参考</span><div className="theme-picker" role="radiogroup" aria-label="设计风格">
     {themes.map((theme) => <button key={theme.name} type="button" className={`theme-card ${value === theme.name ? "selected" : ""}`} aria-pressed={value === theme.name} onClick={() => onChange(theme.name)}>
-      <span className="theme-art" style={{ "--theme-light": theme.colors[0], "--theme-dark": theme.colors[1] }}><span className="theme-sofa" /><span className="theme-plant" /></span><strong>{theme.name}</strong><small>{theme.description}</small>
+      <span className="theme-art"><img src={theme.image} alt="" /></span><strong>{theme.name}</strong><small>{theme.description}</small>
     </button>)}
   </div></div>
 }
@@ -325,11 +331,11 @@ function UploadGuidance({ expanded, onToggle }) {
       {expanded && (
         <div className="upload-guidance-cards">
           <article className="upload-guidance-card is-good">
-            <img src={uploadGood} alt="适合：完整明亮且角度端正的房间照片" />
+            <img src={uploadGoodPhoto} alt="适合：完整明亮且角度端正的房间照片" />
             <div><strong>适合</strong><p>空间完整 · 光线清楚 · 角度端正</p></div>
           </article>
           <article className="upload-guidance-card is-bad">
-            <img src={uploadBad} alt="不适合：局部昏暗且角度倾斜的房间照片" />
+            <img src={uploadBadPhoto} alt="不适合：局部昏暗且角度倾斜的房间照片" />
             <div><strong>不适合</strong><p>只拍局部 · 画面昏暗 · 明显倾斜</p></div>
           </article>
         </div>
