@@ -8,8 +8,7 @@ export const DEFAULT_PROVIDER_TIMEOUT_MS = 110_000
 const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png'])
 const ALLOWED_ROOMS = new Set(['客厅', '卧室', '餐厅', '厨房', '书房'])
 const ALLOWED_THEMES = new Set(['现代简约', '北欧', '日式', '奶油风', '原木风', '轻奢'])
-const ALLOWED_SCALES = new Set(['保真', '均衡', '创意', '大胆'])
-const ALLOWED_PREFERENCES = new Set(['layout', 'storage', 'light'])
+const ALLOWED_SCALES = new Set()
 
 const error = (code, fields = undefined) => ({ ok: false, code, ...(fields ? { fields } : {}) })
 
@@ -35,8 +34,6 @@ function validateRequest({ image, params }, maxImageBytes) {
 
   if (!ALLOWED_ROOMS.has(params?.room)) fields.room = '请选择有效的空间类型。'
   if (!ALLOWED_THEMES.has(params?.theme)) fields.theme = '请选择有效的设计风格。'
-  if (!ALLOWED_SCALES.has(params?.scale)) fields.scale = '请选择有效的改造强度。'
-  if (params?.preferences && (typeof params.preferences !== 'object' || Object.keys(params.preferences).some((key) => !ALLOWED_PREFERENCES.has(key) || typeof params.preferences[key] !== 'boolean'))) fields.preferences = '固定偏好格式无效。'
   return Object.keys(fields).length ? error('VALIDATION_ERROR', fields) : null
 }
 
@@ -174,7 +171,7 @@ export class GenerationService {
     if (validation) return Promise.resolve(validation)
     const id = `generation_${randomUUID()}`
     const dimensions = Number.isFinite(image.width) && Number.isFinite(image.height) ? { width: image.width, height: image.height } : {}
-    const task = { id, traceId: id, userId: user.id, status: 'queued', createdAt: this.clock(), updatedAt: this.clock(), input: { name: image.name ?? 'upload', type: image.type, size: imageBytes(image).length, ...dimensions }, params: { ...params, preferences: { ...(params.preferences ?? {}) } } }
+    const task = { id, traceId: id, userId: user.id, status: 'queued', createdAt: this.clock(), updatedAt: this.clock(), input: { name: image.name ?? 'upload', type: image.type, size: imageBytes(image).length, ...dimensions }, params: { ...params, ...(params.styleReference ? { styleReference: { type: params.styleReference.type, size: imageBytes(params.styleReference)?.length ?? 0 } } : {}) } }
     let reservation
     try {
       const prepared = this.store.transaction(() => {
@@ -189,7 +186,7 @@ export class GenerationService {
       if (reservation?.ok) this.creditLedger?.releaseForUser({ userId: user.id, reservationId: reservation.reservation.id })
       return Promise.resolve(error('GENERATION_PERSISTENCE_FAILED'))
     }
-    queueMicrotask(() => this.#run(task, image))
+    queueMicrotask(() => this.#run(task, image, params.styleReference))
     return Promise.resolve({ ok: true, task: this.#publicTask(task) })
   }
 
@@ -210,7 +207,7 @@ export class GenerationService {
     }
   }
 
-  async #run(task, image) {
+  async #run(task, image, styleReference) {
     const serverStartedAt = Date.now()
     task.timings = { queuedMs: Math.max(0, this.clock() - task.createdAt) }
     task.status = 'running'
@@ -233,7 +230,7 @@ export class GenerationService {
       }
       providerStartedAt = Date.now()
       const output = await Promise.race([
-        provider.generate({ image, params: task.params, traceId: task.traceId }),
+        provider.generate({ image, params: { ...task.params, styleReference }, traceId: task.traceId }),
         new Promise((_, reject) => { timeoutId = setTimeout(() => reject({ code: 'PROVIDER_TIMEOUT' }), this.providerTimeoutMs) }),
       ])
       clearTimeout(timeoutId)

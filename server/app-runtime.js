@@ -7,6 +7,7 @@ import { MemoryRedemptionCodeStore, RedemptionCodeService } from './redemption-c
 import { GenerationService, MemoryGenerationStore, ProviderRegistry } from './generation-service.js'
 import { MemoryPaymentStore, PaymentService } from './payment-service.js'
 import { MemoryWorksStore, WorksService } from './works-service.js'
+import { MemoryStyleStore, StyleService } from './style-service.js'
 
 function localPaymentProvider() {
   return {
@@ -66,10 +67,11 @@ export function generationSizeForImage(image) {
   return `${width}x${height}`
 }
 
-function imageEditForm({ model, image, prompt, size }) {
+function imageEditForm({ model, image, styleImage, prompt, size }) {
   const form = new FormData()
   form.set('model', model)
   form.set('image', new Blob([image.data], { type: image.type }), image.type === 'image/jpeg' ? 'room.jpg' : 'room.png')
+  if (styleImage) form.append('image', new Blob([styleImage.data], { type: styleImage.type }), 'style-reference.png')
   form.set('prompt', prompt)
   form.set('size', size)
   form.set('n', '1')
@@ -110,7 +112,7 @@ async function upstreamFailure(response) {
   }
 }
 
-function imageProviderRequest({ endpoint, model, image, prompt, apiKey, traceId }) {
+function imageProviderRequest({ endpoint, model, image, styleImage, prompt, apiKey, traceId }) {
   const headers = { accept: 'application/json', authorization: `Bearer ${apiKey}`, 'x-request-id': traceId }
   const size = generationSizeForImage(image)
   if (usesJsonReferenceImage(endpoint)) {
@@ -120,14 +122,14 @@ function imageProviderRequest({ endpoint, model, image, prompt, apiKey, traceId 
       body: JSON.stringify({
         model,
         prompt,
-        image: Buffer.from(image.data).toString('base64'),
+        image: styleImage ? [Buffer.from(image.data).toString('base64'), Buffer.from(styleImage.data).toString('base64')] : Buffer.from(image.data).toString('base64'),
         size,
         n: 1,
         response_format: 'url',
       }),
     }
   }
-  return { headers, body: imageEditForm({ model, image, prompt, size }) }
+  return { headers, body: imageEditForm({ model, image, styleImage, prompt, size }) }
 }
 
 function diagnosticError(message, { code, stage, httpStatus } = {}) {
@@ -148,7 +150,8 @@ export function configuredGenerationProvider({ adminProviderService, fallback, f
       const protocol = providerProtocol(provider.endpoint)
       logger.info?.('[Generation]', { traceId, stage: 'provider-request', provider: provider.name, model: provider.model, protocol })
       try {
-        const request = imageProviderRequest({ endpoint: provider.endpoint, model: provider.model, image, prompt: generationPrompt(params), apiKey: provider.apiKey, traceId })
+        const styleImage = params?.styleReference?.data ? params.styleReference : null
+        const request = imageProviderRequest({ endpoint: provider.endpoint, model: provider.model, image, styleImage, prompt: generationPrompt(params), apiKey: provider.apiKey, traceId })
         const response = await fetchImpl(provider.endpoint, {
           method: 'POST',
           ...request,
@@ -207,6 +210,7 @@ export async function testConfiguredProvider({ endpoint, model, apiKey, traceId,
     endpoint,
     model,
     image: { type: 'image/png', data: PROVIDER_TEST_PNG },
+    styleImage: { type: 'image/png', data: PROVIDER_TEST_PNG },
     prompt: 'Edit this room reference image while preserving its geometry and camera viewpoint. Apply a minimal modern interior style.',
     apiKey,
     traceId,
@@ -253,7 +257,8 @@ export function createAppRuntime({ mailer, paymentProvider = localPaymentProvide
   const generationService = new GenerationService({ authService, store: stores.generations ?? new MemoryGenerationStore(), providers, creditLedger, objectStorage, fetchImpl, logger })
   const paymentService = new PaymentService({ authService, creditLedger, store: stores.payments ?? new MemoryPaymentStore(), provider: paymentProvider })
   const worksService = new WorksService({ authService, store: stores.works ?? new MemoryWorksStore() })
-  const api = new AppApi({ authService, generationService, creditLedger, paymentService, worksService, adminProviderService, redemptionCodeService, objectStorage, secureCookies, allowedOrigins })
+  const styleService = new StyleService({ authService, store: stores.styles ?? new MemoryStyleStore() })
+  const api = new AppApi({ authService, generationService, creditLedger, paymentService, worksService, adminProviderService, redemptionCodeService, styleService, objectStorage, secureCookies, allowedOrigins })
   const provisionAdmin = ({ password }) => authService.provisionUser({ email: normalizedAdminEmail, password })
-  return { api, authService, creditLedger, generationService, paymentService, worksService, adminProviderService, redemptionCodeService, objectStorage, provisionAdmin, close }
+  return { api, authService, creditLedger, generationService, paymentService, worksService, styleService, adminProviderService, redemptionCodeService, objectStorage, provisionAdmin, close }
 }

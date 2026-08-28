@@ -83,7 +83,7 @@ function decodeImage(image) {
 }
 
 export class AppApi {
-  constructor({ authService, generationService, creditLedger, paymentService, worksService, adminProviderService, redemptionCodeService, objectStorage = null, maxJsonBytes = DEFAULT_MAX_JSON_BYTES, secureCookies = false, allowedOrigins = [] } = {}) {
+  constructor({ authService, generationService, creditLedger, paymentService, worksService, adminProviderService, redemptionCodeService, styleService, objectStorage = null, maxJsonBytes = DEFAULT_MAX_JSON_BYTES, secureCookies = false, allowedOrigins = [] } = {}) {
     if (!authService || !generationService || !creditLedger || !paymentService || !worksService || !adminProviderService || !redemptionCodeService) throw new Error('all application services are required')
     this.authService = authService
     this.generationService = generationService
@@ -92,6 +92,7 @@ export class AppApi {
     this.worksService = worksService
     this.adminProviderService = adminProviderService
     this.redemptionCodeService = redemptionCodeService
+    this.styleService = styleService
     this.objectStorage = objectStorage
     this.maxJsonBytes = maxJsonBytes
     this.secureCookies = secureCookies
@@ -155,7 +156,7 @@ export class AppApi {
     if (method === 'POST' && pathname === '/api/auth/password-reset/request') return withJsonBody(async (body) => safeResult(await this.authService.requestPasswordReset(body.email)))
     if (method === 'POST' && pathname === '/api/auth/password-reset/confirm') return withJsonBody(async (body) => safeResult(await this.authService.resetPassword(body)))
 
-    if (method === 'POST' && pathname === '/api/generations') return withJsonBody(async (body) => safeResult(await this.generationService.createGeneration({ sessionToken, image: decodeImage(body.image), params: body.params }), 202))
+    if (method === 'POST' && pathname === '/api/generations') return withJsonBody(async (body) => safeResult(await this.generationService.createGeneration({ sessionToken, image: decodeImage(body.image), params: { ...(body.params ?? {}), styleReference: decodeImage(body.params?.styleReference) } }), 202))
     const generationMatch = pathname.match(/^\/api\/generations\/([^/]+)$/u)
     if (method === 'GET' && generationMatch) return safeResult(this.generationService.getGeneration({ sessionToken, taskId: decodeURIComponent(generationMatch[1]) }))
     const objectMatch = pathname.match(/^\/api\/objects\/([^/]+)$/u)
@@ -178,6 +179,8 @@ export class AppApi {
 
     if (method === 'POST' && pathname === '/api/works') return withJsonBody((body) => safeResult(this.worksService.create({ ...body, sessionToken }), 201))
     if (method === 'GET' && pathname === '/api/works') return safeResult(this.worksService.list({ sessionToken }))
+    if (method === 'GET' && pathname === '/api/styles') return safeResult(this.styleService.list({ sessionToken }))
+    if (method === 'POST' && pathname === '/api/styles') return withJsonBody(async (body) => safeResult(await this.styleService.create({ sessionToken, name: body.name, prompt: body.prompt, image: decodeImage(body.image) }), 201))
     const workMatch = pathname.match(/^\/api\/works\/([^/]+)$/u)
     if (method === 'GET' && workMatch) return safeResult(this.worksService.get({ sessionToken, workId: decodeURIComponent(workMatch[1]) }))
 

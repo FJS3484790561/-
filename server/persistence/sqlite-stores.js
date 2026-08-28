@@ -51,6 +51,12 @@ class SqliteJsonMap {
   }
 }
 
+class SqliteStyleCollection {
+  constructor(database) { this.select = database.prepare('SELECT value_json FROM user_styles'); this.insert = database.prepare('INSERT INTO user_styles (style_id, user_id, value_json) VALUES (?, ?, ?) ON CONFLICT(style_id) DO UPDATE SET value_json = excluded.value_json') }
+  values() { return this.select.all().map(({ value_json }) => { const value = JSON.parse(value_json); return { ...value, image: { type: value.image.type, data: Buffer.from(value.image.dataBase64, 'base64') } } }) }
+  set(id, value) { this.insert.run(id, value.userId, JSON.stringify({ ...value, image: { type: value.image.type, dataBase64: value.image.data.toString('base64') } })); return this }
+}
+
 class SqliteIdSet {
   constructor(database, table, column) {
     this.hasStatement = database.prepare(`SELECT 1 FROM ${table} WHERE ${column} = ?`)
@@ -152,6 +158,7 @@ export function createSqliteStores({ filename } = {}) {
     audit: new SqliteAuditCollection(database),
     transaction: runTransaction,
   }
+  const styles = { styles: new SqliteStyleCollection(database), transaction: runTransaction }
   const redemptionCodes = {
     codes: new SqliteJsonMap(database, { table: 'redemption_codes', keyColumn: 'code_digest', extras: { code_id: (value) => value.id } }),
     redemptions: new SqliteJsonMap(database, { table: 'redemption_code_uses', keyColumn: 'redemption_key', extras: { code_id: (value) => value.codeId, user_id: (value) => value.userId } }),
@@ -164,5 +171,5 @@ export function createSqliteStores({ filename } = {}) {
     created_at: (value) => value.createdAt,
     metadata_json: (value) => encode(value.metadata ?? {}),
   } })
-  return { database, auth, credits, payments, generations, works, providers, redemptionCodes, objects, close: () => database.close() }
+  return { database, auth, credits, payments, generations, works, providers, styles, redemptionCodes, objects, close: () => database.close() }
 }

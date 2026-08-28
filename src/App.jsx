@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   BookOpen,
-  Check,
   ChevronDown,
   CircleHelp,
   Coins,
@@ -20,11 +19,19 @@ import {
   WandSparkles,
   X,
 } from "lucide-react";
-import { ApiError, api, fileToImage, pollGeneration } from "./api";
+import { ApiError, api, fileToImage, pollGeneration, styleReferenceFor } from "./api";
+import uploadGood from "./assets/upload-good.svg";
+import uploadBad from "./assets/upload-bad.svg";
 
-const themes = ["现代简约", "北欧", "日式", "奶油风", "原木风", "轻奢"];
+const themes = [
+  { name: "现代简约", colors: ["#f5f1eb", "#b7a58f"], description: "克制、明亮、线条利落" },
+  { name: "北欧", colors: ["#f4f0e8", "#9eb7a2"], description: "自然、轻盈、舒适" },
+  { name: "日式", colors: ["#eee8db", "#bd9670"], description: "留白、木质、宁静" },
+  { name: "奶油风", colors: ["#fff0d8", "#d8a77c"], description: "柔和、圆润、温暖" },
+  { name: "原木风", colors: ["#efe4d0", "#9b6e48"], description: "自然、质朴、有温度" },
+  { name: "轻奢", colors: ["#eee9e2", "#aa8d68"], description: "精致、沉稳、有层次" },
+];
 const rooms = ["客厅", "卧室", "餐厅", "厨房", "书房"];
-const scales = ["保真", "均衡", "创意", "大胆"];
 const packs = [
   { amount: 10, credits: 12, badge: "常用" },
   { amount: 30, credits: 45, badge: "更划算" },
@@ -255,7 +262,7 @@ function SelectField({ label, value, options, onChange }) {
           onChange={(event) => onChange(event.target.value)}
         >
           {options.map((option) => (
-            <option key={option}>{option}</option>
+            <option key={option}>{typeof option === "string" ? option : option.name}</option>
           ))}
         </select>
         <ChevronDown size={17} aria-hidden="true" />
@@ -288,25 +295,70 @@ function Comparison({ before, after }) {
   );
 }
 
+function ThemePicker({ value, onChange }) {
+  return <div className="field"><span>设计风格 · 图片参考</span><div className="theme-picker" role="radiogroup" aria-label="设计风格">
+    {themes.map((theme) => <button key={theme.name} type="button" className={`theme-card ${value === theme.name ? "selected" : ""}`} aria-pressed={value === theme.name} onClick={() => onChange(theme.name)}>
+      <span className="theme-art" style={{ "--theme-light": theme.colors[0], "--theme-dark": theme.colors[1] }}><span className="theme-sofa" /><span className="theme-plant" /></span><strong>{theme.name}</strong><small>{theme.description}</small>
+    </button>)}
+  </div></div>
+}
+
+function CustomStylePanel({ onSelect }) {
+  const [styles, setStyles] = useState([]); const [file, setFile] = useState(null); const [name, setName] = useState(''); const [prompt, setPrompt] = useState(''); const [message, setMessage] = useState('')
+  useEffect(() => { api.styles().then((result) => setStyles(result.styles ?? [])).catch(() => {}) }, [])
+  async function save() { if (!file || !name.trim() || !prompt.trim()) { setMessage('请上传风格图，并填写名称和风格描述。'); return } try { const result = await api.createStyle({ name, prompt, image: file.payload }); setStyles((current) => [result.style, ...current]); onSelect({ ...file.payload }, prompt); setMessage('风格已保存，仅你本人可见。'); setFile(null); setName(''); setPrompt('') } catch (error) { setMessage(messageFor(error, '风格保存失败。')) } }
+  return <div className="custom-style-panel"><div className="custom-style-title"><span>自定义风格</span><small>上传一张风格参考图并保存复用</small></div><div className="custom-style-row"><label className="secondary-button custom-upload"><ImagePlus size={15} />{file ? file.name : '选择风格图'}<input type="file" accept="image/jpeg,image/png" onChange={async (event) => { const chosen = event.target.files?.[0]; if (chosen) setFile({ name: chosen.name, payload: await fileToImage(chosen).catch(() => null) }) }} /></label><input value={name} onChange={(event) => setName(event.target.value)} placeholder="风格名称" /><input value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="例如：暖白、浅木、亚麻" /><button className="secondary-button" type="button" onClick={save}>保存</button></div>{styles.length > 0 && <div className="saved-style-list">{styles.map((style) => <button key={style.id} type="button" onClick={() => onSelect({ type: style.image.type, dataBase64: style.image.dataBase64 }, style.prompt)}>{style.name}</button>)}</div>}{message && <small className="custom-style-message">{message}</small>}</div>
+}
+
+function UploadGuidance({ expanded, onToggle }) {
+  return (
+    <section className={`upload-guidance ${expanded ? "is-expanded" : "is-collapsed"}`} aria-labelledby="upload-guidance-title">
+      <div className="upload-guidance-heading">
+        <div>
+          <span className="section-kicker">拍摄小提示</span>
+          <h3 id="upload-guidance-title">照片拍得好，改造更准确</h3>
+        </div>
+        <button className="text-button" type="button" onClick={onToggle} aria-expanded={expanded}>
+          {expanded ? "收起" : "查看拍摄要求"}
+        </button>
+      </div>
+      {expanded && (
+        <div className="upload-guidance-cards">
+          <article className="upload-guidance-card is-good">
+            <img src={uploadGood} alt="适合：完整明亮且角度端正的房间照片" />
+            <div><strong>适合</strong><p>空间完整 · 光线清楚 · 角度端正</p></div>
+          </article>
+          <article className="upload-guidance-card is-bad">
+            <img src={uploadBad} alt="不适合：局部昏暗且角度倾斜的房间照片" />
+            <div><strong>不适合</strong><p>只拍局部 · 画面昏暗 · 明显倾斜</p></div>
+          </article>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function Workbench({ credits, refreshCredits, onSaved }) {
-  const [theme, setTheme] = useState(themes[0]);
+  const [theme, setTheme] = useState(themes[0].name);
   const [room, setRoom] = useState(rooms[0]);
-  const [scale, setScale] = useState(scales[1]);
-  const [preferences, setPreferences] = useState({
-    layout: true,
-    storage: true,
-    light: false,
-  });
+  const [styleReference, setStyleReference] = useState(null);
+  const [customStylePrompt, setCustomStylePrompt] = useState('');
   const [image, setImage] = useState(null);
   const [task, setTask] = useState(null);
   const [status, setStatus] = useState("empty");
   const [notice, setNotice] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [showUploadGuidance, setShowUploadGuidance] = useState(true);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editPrompt, setEditPrompt] = useState("");
+  const [candidateTask, setCandidateTask] = useState(null);
+  const [editBusy, setEditBusy] = useState(false);
   const inputRef = useRef(null);
   const pollAbortRef = useRef(null);
   useEffect(() => () => pollAbortRef.current?.abort(), []);
-  const params = { room, theme, scale, preferences };
+  useEffect(() => { let active = true; styleReferenceFor(theme).then((value) => active && setStyleReference(value)); return () => { active = false } }, [theme]);
+  const params = { room, theme, styleReference, customStylePrompt };
   const resultUrl = task?.result?.effectImage?.url;
   const statusText = {
     empty: "上传一张房间照片开始设计",
@@ -336,6 +388,7 @@ function Workbench({ credits, refreshCredits, onSaved }) {
     try {
       setImage(await fileToImage(file));
       setStatus("ready");
+      setShowUploadGuidance(false);
     } catch (error) {
       setNotice({ tone: "error", text: messageFor(error) });
     }
@@ -449,6 +502,17 @@ function Workbench({ credits, refreshCredits, onSaved }) {
       setSaving(false);
     }
   };
+  const refine = async () => {
+    if (!editPrompt.trim() || !image || !styleReference || !task) return;
+    setEditBusy(true); setNotice(null); setCandidateTask(null);
+    try {
+      const created = await api.createGeneration({ image: image.payload, params: { ...params, customStylePrompt: `${customStylePrompt ? `${customStylePrompt}; ` : ""}局部修改要求：${editPrompt.trim()}` } });
+      const completed = await pollGeneration(created.task.id, { onUpdate: setCandidateTask });
+      setCandidateTask(completed); console.info("[Generation Edit]", { stage: completed.status, traceId: completed.traceId });
+      if (completed.status !== "succeeded") setNotice({ tone: "error", text: completed.error?.message ?? "二次修改失败，本次不会扣除额度。" });
+    } catch (error) { setNotice({ tone: "error", text: messageFor(error, "二次修改失败，本次不会扣除额度。") }) } finally { setEditBusy(false) }
+  };
+  const downloadCandidate = () => { const url = candidateTask?.result?.effectImage?.url; if (!url) return; const link = document.createElement("a"); link.href = url; link.download = "室内设计-二次修改.jpg"; link.click() };
   const download = () => {
     if (!resultUrl) return;
     const link = document.createElement("a");
@@ -491,62 +555,12 @@ function Workbench({ credits, refreshCredits, onSaved }) {
               options={rooms}
               onChange={setRoom}
             />
-            <SelectField
-              label="设计风格"
-              value={theme}
-              options={themes}
-              onChange={setTheme}
-            />
-            <div className="field">
-              <span>改造强度</span>
-              <div className="scale-options">
-                {scales.map((option) => (
-                  <button
-                    key={option}
-                    className={scale === option ? "selected" : ""}
-                    type="button"
-                    aria-pressed={scale === option}
-                    onClick={() => setScale(option)}
-                  >
-                    {option}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <fieldset className="field fieldset">
-              <legend>
-                固定偏好 <small>可选</small>
-              </legend>
-              <div className="preference-list">
-                {[
-                  ["layout", "尽量保留原有布局"],
-                  ["storage", "增加实用收纳"],
-                  ["light", "让空间更明亮"],
-                ].map(([key, label]) => (
-                  <button
-                    key={key}
-                    className={
-                      preferences[key] ? "preference checked" : "preference"
-                    }
-                    type="button"
-                    aria-pressed={preferences[key]}
-                    onClick={() =>
-                      setPreferences((current) => ({
-                        ...current,
-                        [key]: !current[key],
-                      }))
-                    }
-                  >
-                    <span>{preferences[key] && <Check size={14} />}</span>
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </fieldset>
+            <ThemePicker value={theme} onChange={setTheme} />
+            <CustomStylePanel onSelect={(reference, prompt) => { setStyleReference(reference); setCustomStylePrompt(prompt) }} />
           </div>
           <button
             className="primary-button"
-            disabled={["creating", "polling"].includes(status)}
+            disabled={["creating", "polling"].includes(status) || !styleReference}
             type="button"
             onClick={generate}
           >
@@ -618,6 +632,7 @@ function Workbench({ credits, refreshCredits, onSaved }) {
               )}
             </div>
           </div>
+          <UploadGuidance expanded={showUploadGuidance} onToggle={() => setShowUploadGuidance((value) => !value)} />
           <input
             ref={inputRef}
             className="visually-hidden"
@@ -664,6 +679,8 @@ function Workbench({ credits, refreshCredits, onSaved }) {
               {saved ? "已保存" : "保存作品"}
             </button>
           </div>
+          {resultUrl && <div className="refine-area"><div><strong>还想再调整？</strong><small>例如：把方桌换成圆桌。未使用区域蒙版时，附近物体可能同步变化。</small></div><button className="secondary-button" type="button" onClick={() => setEditOpen(true)}><RefreshCw size={16} />二次修改</button></div>}
+          {editOpen && <div className="backdrop"><section className="dialog refine-dialog" role="dialog" aria-modal="true" aria-labelledby="refine-title"><header className="dialog-header"><div><span className="kicker">新一次生成 · 1 次额度</span><h2 id="refine-title">描述你想改的地方</h2></div><button className="icon-button" type="button" onClick={() => { setEditOpen(false); setCandidateTask(null) }} aria-label="关闭二次修改"><X size={19} /></button></header><textarea value={editPrompt} onChange={(event) => setEditPrompt(event.target.value)} placeholder="例如：把客厅里的方桌换成一张圆桌，保持其他布置不变" rows="4" /><p className="form-help">成功生成才扣 1 次额度，失败自动释放。没有涂抹范围时，AI 可能影响相邻区域。</p><button className="primary-button" type="button" disabled={editBusy || !editPrompt.trim()} onClick={refine}>{editBusy ? <LoaderCircle className="spin" /> : <WandSparkles size={17} />}{editBusy ? "生成中…" : "生成修改候选"}</button>{candidateTask?.result?.effectImage?.url && <div className="candidate-preview"><img src={candidateTask.result.effectImage.url} alt="二次修改候选图" /><div className="dialog-actions"><button className="primary-button compact" type="button" onClick={() => { setTask(candidateTask); setEditOpen(false); setCandidateTask(null); setEditPrompt(""); refreshCredits() }}>覆盖当前效果</button><button className="secondary-button" type="button" onClick={downloadCandidate}>下载候选图</button><button className="text-button" type="button" onClick={() => { setEditOpen(false); setCandidateTask(null) }}>关闭且不保存</button></div></div>}</section></div>}
         </section>
       </div>
     </div>

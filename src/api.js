@@ -38,6 +38,8 @@ export const api = {
   generation: (id) => request(`/api/generations/${encodeURIComponent(id)}`),
   works: () => request('/api/works'),
   work: (id) => request(`/api/works/${encodeURIComponent(id)}`),
+  styles: () => request('/api/styles'),
+  createStyle: (payload) => post('/api/styles', payload),
   saveWork: (payload) => post('/api/works', payload),
   createOrder: (amountYuan) => post('/api/orders', { amountYuan }),
   order: (id) => request(`/api/orders/${encodeURIComponent(id)}`),
@@ -101,6 +103,18 @@ export async function fileToImage(file) {
     console.info('[Upload]', { stage: 'optimization-fallback', originalBytes: file.size, elapsedMs: Date.now() - startedAt })
     return { previewUrl: originalUrl, payload: { name: file.name, type: file.type, ...(sourceWidth && sourceHeight ? { width: sourceWidth, height: sourceHeight } : {}), dataBase64: originalUrl.split(',', 2)[1] ?? '' } }
   }
+}
+
+export async function styleReferenceFor(theme) {
+  const palette = { '现代简约': ['#f5f1eb', '#b7a58f'], '北欧': ['#f4f0e8', '#9eb7a2'], '日式': ['#eee8db', '#bd9670'], '奶油风': ['#fff0d8', '#d8a77c'], '原木风': ['#efe4d0', '#9b6e48'], '轻奢': ['#eee9e2', '#aa8d68'] }[theme] ?? ['#f4f0e8', '#9eb7a2']
+  const canvas = document.createElement('canvas'); canvas.width = 640; canvas.height = 480
+  const context = canvas.getContext('2d'); context.fillStyle = palette[0]; context.fillRect(0, 0, 640, 480)
+  context.fillStyle = '#d7c8b7'; context.fillRect(0, 300, 640, 180)
+  context.fillStyle = palette[1]; context.fillRect(110, 245, 420, 105); context.fillStyle = '#fff'; context.fillRect(155, 270, 330, 75)
+  context.fillStyle = '#b99672'; context.fillRect(280, 350, 80, 75); context.fillStyle = '#aebda9'; context.beginPath(); context.arc(80, 260, 46, 0, Math.PI * 2); context.fill()
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.86))
+  const dataUrl = await readDataUrl(blob)
+  return { name: `style-${theme}.jpg`, type: 'image/jpeg', width: 640, height: 480, dataBase64: dataUrl.split(',', 2)[1] ?? '' }
 }
 
 export async function pollGeneration(id, { interval = 350, signal, onUpdate } = {}) {

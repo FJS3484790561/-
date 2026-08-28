@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" role="img" aria-label="明亮完整的房间拍摄示例">
+  <defs>
+    <linearGradient id="wall" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#fffaf4"/><stop offset="1" stop-color="#eadfd2"/></linearGradient>
+    <linearGradient id="floor" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#c59b72"/><stop offset="1" stop-color="#e1c39f"/></linearGradient>
+  </defs>
+  <rect width="800" height="600" fill="url(#wall)"/>
+  <rect y="420" width="800" height="180" fill="url(#floor)"/>
+  <rect x="72" y="72" width="238" height="205" rx="8" fill="#cde4e4" stroke="#f7ffff" stroke-width="16"/>
+  <path d="M191 72v205M72 175h238" stroke="#fff" stroke-width="12"/>
+  <rect x="390" y="102" width="220" height="26" rx="13" fill="#d7c5b4"/>
+  <rect x="410" y="150" width="180" height="120" rx="8" fill="#efe1d2" stroke="#d5b99f" stroke-width="8"/>
+  <path d="M450 245h100M500 180v65" stroke="#bb927c" stroke-width="10"/>
+  <rect x="170" y="350" width="385" height="115" rx="42" fill="#d9b7a0"/>
+  <rect x="205" y="310" width="135" height="80" rx="30" fill="#e8cfc0"/>
+  <rect x="390" y="310" width="135" height="80" rx="30" fill="#e8cfc0"/>
+  <rect x="346" y="438" width="32" height="95" fill="#9c735b"/><rect x="490" y="438" width="32" height="95" fill="#9c735b"/>
+  <ellipse cx="360" cy="530" rx="190" ry="28" fill="#eadbc9" opacity=".8"/>
+  <rect x="630" y="310" width="34" height="115" rx="17" fill="#a67d5b"/><circle cx="647" cy="276" r="62" fill="#86a578"/><circle cx="610" cy="300" r="45" fill="#739468"/><circle cx="683" cy="305" r="44" fill="#9bb184"/>
+  <circle cx="112" cy="470" r="24" fill="#f6f0e9"/><path d="M112 470v-82M112 415l-27-37M112 430l31-43" stroke="#6f8d6e" stroke-width="12" stroke-linecap="round"/>
+</svg>

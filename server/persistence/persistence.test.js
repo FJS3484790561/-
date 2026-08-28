@@ -311,7 +311,7 @@ test('reapplying migrations is idempotent and preserves the credit journal', asy
   runtime.close()
   for (let attempt = 0; attempt < 2; attempt += 1) {
     stores = createSqliteStores({ filename })
-    assert.deepEqual(stores.database.prepare('SELECT version FROM schema_migrations ORDER BY version').all().map((row) => row.version), [1, 2, 3])
+    assert.deepEqual(stores.database.prepare('SELECT version FROM schema_migrations ORDER BY version').all().map((row) => row.version), [1, 2, 3, 4])
     assert.equal(stores.database.prepare('SELECT COUNT(*) AS count FROM credit_operations').get().count, 1)
     assert.equal(verifySqliteDatabase(stores.database).ok, true)
     stores.close()
@@ -334,7 +334,7 @@ test('upgrades a populated v1 credit database and backfills its journal', async 
   v1.close()
 
   const upgraded = openSqliteDatabase({ filename })
-  assert.deepEqual(upgraded.prepare('SELECT version FROM schema_migrations ORDER BY version').all().map((row) => row.version), [1, 2, 3])
+  assert.deepEqual(upgraded.prepare('SELECT version FROM schema_migrations ORDER BY version').all().map((row) => row.version), [1, 2, 3, 4])
   assert.deepEqual(upgraded.prepare('SELECT operation_type FROM credit_operations ORDER BY occurred_at').all().map((row) => row.operation_type), ['grant', 'reserve', 'settle'])
   assert.equal(upgraded.prepare('SELECT COUNT(*) AS count FROM credit_reservation_operations').get().count, 1)
   assert.equal(verifySqliteDatabase(upgraded).ok, true)
