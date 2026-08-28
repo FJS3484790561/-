@@ -360,3 +360,28 @@ test('rejects incomplete production persistence configuration instead of falling
   assert.ok(runtime.objectStorage)
   runtime.close()
 })
+
+test('allows the HTTP test environment to override Secure session cookies', async (context) => {
+  const root = await mkdtemp(join(tmpdir(), 'interior-cookie-config-'))
+  const runtime = createRuntimeFromEnvironment({ environment: {
+    NODE_ENV: 'production',
+    APP_SECURE_COOKIES: 'false',
+    APP_DATABASE_PATH: join(root, 'configured.sqlite'),
+    APP_ENCRYPTION_KEY: Buffer.alloc(32, 8).toString('base64'),
+    OBJECT_STORAGE_DRIVER: 'cos',
+    COS_SECRET_ID: 'configured-at-runtime',
+    COS_SECRET_KEY: 'configured-at-runtime',
+    COS_BUCKET: 'example-1234567890',
+    COS_REGION: 'ap-example',
+  } })
+  context.after(() => runtime.close())
+  context.after(() => rm(root, { recursive: true, force: true }))
+  await runtime.authService.provisionUser({ email: 'cookie@example.com', password: 'correct-horse-battery' })
+  const response = await runtime.api.handle(new Request('http://127.0.0.1/api/auth/login', {
+    method: 'POST',
+    headers: { origin: 'http://127.0.0.1', 'content-type': 'application/json' },
+    body: JSON.stringify({ email: 'cookie@example.com', password: 'correct-horse-battery' }),
+  }))
+  assert.equal(response.status, 200)
+  assert.doesNotMatch(response.headers.get('set-cookie') ?? '', /; Secure(?:;|$)/u)
+})

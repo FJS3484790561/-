@@ -14,6 +14,12 @@ function encryptionKey(environment, production) {
   return key
 }
 
+function secureCookiesSetting(environment, production) {
+  if (environment.APP_SECURE_COOKIES === 'true') return true
+  if (environment.APP_SECURE_COOKIES === 'false') return false
+  return production
+}
+
 export function createRuntimeFromEnvironment({ environment = process.env, mailer, paymentProvider, generationProvider } = {}) {
   const production = environment.NODE_ENV === 'production'
   const allowedOrigins = (environment.APP_ALLOWED_ORIGINS ?? '').split(',').map((origin) => origin.trim()).filter(Boolean)
@@ -41,7 +47,7 @@ export function createRuntimeFromEnvironment({ environment = process.env, mailer
       paymentProvider,
       generationProvider,
       encryptionKey: encryptionKey(environment, production),
-      secureCookies: production,
+      secureCookies: secureCookiesSetting(environment, production),
       adminEmail: environment.ADMIN_EMAIL ?? 'admin@example.com',
       allowedOrigins,
       stores: persistence,
