@@ -30,6 +30,8 @@ test('keeps the source orientation while staying near the square pixel budget', 
 test('builds a project-specific image editing prompt with structural and furnishing constraints', () => {
   const prompt = generationPrompt({ room: '客厅', theme: '奶油风', scale: '保真', preferences: { layout: true, storage: true, light: true } })
   assert.match(prompt, /authoritative reference/u)
+  assert.match(prompt, /STYLE REFERENCE/u)
+  assert.match(prompt, /same design language/u)
   assert.match(prompt, /LOCKED GEOMETRY/u)
   assert.match(prompt, /Cream and warm beige/u)
   assert.match(prompt, /conservative soft-furnishing refresh/u)
@@ -37,6 +39,13 @@ test('builds a project-specific image editing prompt with structural and furnish
   assert.match(prompt, /3000K-3500K/u)
   assert.match(prompt, /no blocked doors or walkways/u)
   assert.match(prompt, /Return only the finished edited room image/u)
+})
+
+test('defaults to a visibly large transformation and includes custom style direction', () => {
+  const prompt = generationPrompt({ room: '客厅', theme: '北欧', customStylePrompt: '浅色木材、低饱和蓝灰、天然织物' })
+  assert.match(prompt, /clearly visible full-room transformation/u)
+  assert.match(prompt, /sofa, television cabinet, coffee table/u)
+  assert.match(prompt, /浅色木材/u)
 })
 
 function fixture(fetchImpl, timeoutMs = 100, providerConfig = config) {
@@ -76,6 +85,25 @@ test('uses the image edits multipart request once and returns a URL result', asy
   assert.ok(Number.isFinite(result.timings.providerMs))
   assert.equal(JSON.stringify(data.logs).includes('super-secret-key'), false)
   assert.equal(JSON.stringify(data.logs).includes('private-original'), false)
+})
+
+test('sends the room photo and style reference as separate image parts', async () => {
+  let request
+  const data = fixture(async (_url, options) => {
+    request = options
+    return new Response(JSON.stringify({ data: [{ url: 'https://images.example.test/result.png' }] }), { status: 200 })
+  })
+  await data.provider.generate({
+    image: { type: 'image/jpeg', data: Buffer.from('room-photo') },
+    params: { ...params, styleReference: { type: 'image/png', data: Buffer.from('style-photo') } },
+    traceId: 'generation_two_references',
+  })
+  const images = request.body.getAll('image')
+  assert.equal(images.length, 2)
+  assert.equal(Buffer.from(await images[0].arrayBuffer()).toString(), 'room-photo')
+  assert.equal(Buffer.from(await images[1].arrayBuffer()).toString(), 'style-photo')
+  assert.match(request.body.get('prompt'), /STYLE MATCH PRIORITY/u)
+  assert.match(request.body.get('prompt'), /same design language/u)
 })
 
 test('uses duoyuanx JSON reference-image protocol for generation', async () => {

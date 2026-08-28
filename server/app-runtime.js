@@ -44,15 +44,18 @@ export function generationPrompt(params = {}) {
   if (params.preferences?.layout) requirements.push('preserve a practical furniture layout and keep every circulation route unobstructed')
   if (params.preferences?.storage) requirements.push('add realistic, correctly scaled storage without crowding the room')
   if (params.preferences?.light) requirements.push('improve natural and layered ambient lighting with a warm 3000K-3500K appearance')
+  const customStyle = String(params.customStylePrompt ?? '').trim()
   return [
-    'Use the supplied photograph as the authoritative reference and edit it into one photorealistic, buildable interior design image.',
+    'Use the first supplied photograph as the authoritative reference for the room, and the second supplied image as the authoritative STYLE REFERENCE. Edit the room into one photorealistic, buildable interior design image.',
     `The space is a ${params.room ?? 'residential room'} in ${params.theme ?? 'modern'} style.`,
     'LOCKED GEOMETRY: preserve the exact camera viewpoint, perspective, room dimensions, wall boundaries, ceiling height and shape, floor plane, doors, windows, openings, columns and all other fixed architectural structures. Do not invent unseen areas.',
-    SCALE_DIRECTIONS[params.scale] ?? SCALE_DIRECTIONS.均衡,
+    'STYLE MATCH PRIORITY: derive the overall visual language from the STYLE REFERENCE image, including its dominant color palette, material mix, surface finishes, furniture silhouettes, lighting mood, textile choices, decor density and level of refinement. The result must look like the same design language as that reference, not merely contain one similar-colored object. Do not copy the reference image\'s room layout, camera, architecture or furniture placement.',
     STYLE_DIRECTIONS[params.theme] ?? STYLE_DIRECTIONS.现代简约,
+    SCALE_DIRECTIONS[params.scale] ?? 'Make a clearly visible full-room transformation. Replace mismatched movable furniture and coordinated soft furnishings instead of preserving them by default; keep the fixed architecture and circulation unchanged.',
+    customStyle ? `Additional style direction from the user: ${customStyle}. Treat this as a refinement of the STYLE REFERENCE image, not a reason to weaken the visual transformation.` : '',
     requirements.length ? `User priorities: ${requirements.join('; ')}.` : '',
-    'Coordinate the sofa, tables, chairs, cabinets, curtains, rug, lamps, wall art, cushions, plants and small accessories as one restrained composition. Keep suitable existing items where possible and remove, reposition, replace or visually soften only items that conflict with the chosen direction.',
-    'Prioritize the highest-impact visible areas and practical soft-furnishing changes. Use realistic dimensions, materials, shadows and warm natural lighting. Keep the room tidy while retaining subtle, believable signs of daily life.',
+    'DEFAULT TRANSFORMATION SCOPE: make the change obvious at first glance. For a living room, actively redesign and, when stylistically mismatched, replace the sofa, television cabinet, coffee table, rug, curtains, lighting and visible decor as a coordinated set. For other rooms, replace the equivalent dominant movable furniture and finishes. Do not leave the room looking almost unchanged merely to preserve existing movable furniture.',
+    'Use realistic dimensions, materials, shadows and warm natural lighting. Keep the room tidy while retaining subtle, believable signs of daily life.',
     'The result must be safe, usable and cost-conscious: no blocked doors or walkways, floating or deformed furniture, impossible scale, duplicated objects, distorted architecture, added doors or windows, demolition, floor-plan changes, text, labels, borders or watermarks.',
     'Return only the finished edited room image, not an explanation, mood board, collage, before-and-after layout or design notes.',
   ].filter(Boolean).join(' ')
