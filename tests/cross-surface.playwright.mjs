@@ -40,6 +40,7 @@ try {
     await page.getByRole('button', { name: /生成设计/ }).click()
     await page.getByText('请先上传一张 JPEG 或 PNG 房间照片').waitFor()
     await page.locator('input[type="file"]').setInputFiles({ name: 'room.png', mimeType: 'image/png', buffer: Buffer.from('qa-image') })
+    await page.getByLabel('空间类型').selectOption('客厅')
     await page.getByRole('button', { name: /生成设计/ }).click()
     await page.getByText('设计方案已生成，可以查看对比').waitFor()
 

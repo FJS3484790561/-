@@ -22,7 +22,7 @@ export class WorksService {
     const user = this.authService.getSession(sessionToken)
     if (!user) return { ok: false, code: 'UNAUTHORIZED' }
     if (!generationId || !original?.url || !effectImage?.url || !params) return { ok: false, code: 'INVALID_WORK' }
-    const work = { id: `work_${randomUUID()}`, userId: user.id, generationId, original: { url: String(original.url), mimeType: original.mimeType ?? null }, effectImage: { url: String(effectImage.url), mimeType: effectImage.mimeType ?? null }, params: { ...params, preferences: { ...(params.preferences ?? {}) } }, createdAt: this.clock() }
+    const work = { id: `work_${randomUUID()}`, userId: user.id, generationId, original: { url: String(original.url), mimeType: original.mimeType ?? null }, effectImage: { url: String(effectImage.url), mimeType: effectImage.mimeType ?? null }, params: this.#safeParams(params), createdAt: this.clock() }
     this.store.works.set(work.id, work)
     return { ok: true, work: this.#publicWork(work) }
   }
@@ -31,7 +31,7 @@ export class WorksService {
     const user = this.authService.getSession(sessionToken)
     if (!user) return { ok: false, code: 'UNAUTHORIZED' }
     const works = [...this.store.works.values()].filter((work) => work.userId === user.id).sort((left, right) => right.createdAt - left.createdAt)
-    return { ok: true, works: works.map((work) => this.#publicWork(work)) }
+    return { ok: true, works: works.map((work) => this.#publicSummary(work)) }
   }
 
   get({ sessionToken, workId }) {
@@ -43,6 +43,18 @@ export class WorksService {
   }
 
   #publicWork(work) {
-    return { id: work.id, generationId: work.generationId, original: { ...work.original }, effectImage: { ...work.effectImage }, params: { ...work.params, preferences: { ...(work.params.preferences ?? {}) } }, createdAt: work.createdAt }
+    return { id: work.id, generationId: work.generationId, original: { ...work.original }, effectImage: { ...work.effectImage }, params: this.#safeParams(work.params), createdAt: work.createdAt }
+  }
+
+  #publicSummary(work) {
+    return { id: work.id, effectImage: { ...work.effectImage }, params: this.#safeParams(work.params), createdAt: work.createdAt }
+  }
+
+  #safeParams(params = {}) {
+    return {
+      room: String(params.room ?? ''),
+      theme: String(params.theme ?? ''),
+      ...(String(params.customStylePrompt ?? '').trim() ? { customStylePrompt: String(params.customStylePrompt).trim() } : {}),
+    }
   }
 }

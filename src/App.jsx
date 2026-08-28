@@ -258,7 +258,7 @@ function AuthScreen({ onAuthenticated }) {
   );
 }
 
-function SelectField({ label, value, options, onChange }) {
+function SelectField({ label, value, options, onChange, placeholder }) {
   return (
     <label className="field">
       <span>{label}</span>
@@ -267,6 +267,7 @@ function SelectField({ label, value, options, onChange }) {
           value={value}
           onChange={(event) => onChange(event.target.value)}
         >
+          {placeholder && <option value="" disabled>{placeholder}</option>}
           {options.map((option) => (
             <option key={option}>{typeof option === "string" ? option : option.name}</option>
           ))}
@@ -298,6 +299,41 @@ function Comparison({ before, after }) {
         <input id="comparison-range" className="comparison-range" type="range" min="0" max="100" value={position} onChange={(event) => setPosition(Number(event.target.value))} />
       </figure>
     </section>
+  );
+}
+
+function GenerationProgress({ elapsedMs }) {
+  const seconds = Math.max(0, Math.floor(elapsedMs / 1000));
+  const progress = Math.min(92, Math.round(18 + seconds * 0.62));
+  const stage = seconds < 15
+    ? "正在上传照片并创建任务"
+    : seconds < 45
+      ? "AI 正在理解空间与参考风格"
+      : seconds < 90
+        ? "AI 正在生成并细化设计效果"
+        : "正在完成图片处理和安全保存";
+  return (
+    <div className="generation-progress" aria-live="polite">
+      <div className="generation-orbit" aria-hidden="true">
+        <Sparkles size={23} />
+        <span />
+        <span />
+        <span />
+      </div>
+      <strong>{stage}</strong>
+      <p>生成通常需要 1–2 分钟，请保持页面打开。</p>
+      <div
+        className="generation-progress-track"
+        role="progressbar"
+        aria-label="图片生成进度"
+        aria-valuemin="0"
+        aria-valuemax="100"
+        aria-valuenow={progress}
+      >
+        <span style={{ width: `${progress}%` }} />
+      </div>
+      <small>已等待 {seconds} 秒 · 进度为阶段提示，实际速度取决于图片服务</small>
+    </div>
   );
 }
 
@@ -346,7 +382,7 @@ function UploadGuidance({ expanded, onToggle }) {
 
 function Workbench({ credits, refreshCredits, onSaved }) {
   const [theme, setTheme] = useState(themes[0].name);
-  const [room, setRoom] = useState(rooms[0]);
+  const [room, setRoom] = useState("");
   const [styleReference, setStyleReference] = useState(null);
   const [customStylePrompt, setCustomStylePrompt] = useState('');
   const [image, setImage] = useState(null);
@@ -360,10 +396,19 @@ function Workbench({ credits, refreshCredits, onSaved }) {
   const [editPrompt, setEditPrompt] = useState("");
   const [candidateTask, setCandidateTask] = useState(null);
   const [editBusy, setEditBusy] = useState(false);
+  const [generationStartedAt, setGenerationStartedAt] = useState(null);
+  const [generationElapsedMs, setGenerationElapsedMs] = useState(0);
   const inputRef = useRef(null);
   const pollAbortRef = useRef(null);
   useEffect(() => () => pollAbortRef.current?.abort(), []);
   useEffect(() => { let active = true; styleReferenceFor(theme).then((value) => active && setStyleReference(value)); return () => { active = false } }, [theme]);
+  useEffect(() => {
+    if (!["creating", "polling"].includes(status) || !generationStartedAt) return undefined;
+    const update = () => setGenerationElapsedMs(Date.now() - generationStartedAt);
+    update();
+    const timer = window.setInterval(update, 1000);
+    return () => window.clearInterval(timer);
+  }, [generationStartedAt, status]);
   const params = { room, theme, styleReference, customStylePrompt };
   const resultUrl = task?.result?.effectImage?.url;
   const statusText = {
@@ -400,6 +445,10 @@ function Workbench({ credits, refreshCredits, onSaved }) {
     }
   };
   const generate = async () => {
+    if (!room) {
+      setNotice({ tone: "error", text: "请先选择空间类型，再生成设计。" });
+      return;
+    }
     if (!image) {
       setNotice({ tone: "error", text: "请先上传一张房间照片。" });
       inputRef.current?.focus();
@@ -409,6 +458,8 @@ function Workbench({ credits, refreshCredits, onSaved }) {
     const controller = new AbortController();
     pollAbortRef.current = controller;
     setStatus("creating");
+    setGenerationStartedAt(Date.now());
+    setGenerationElapsedMs(0);
     setNotice(null);
     setSaved(false);
     const submittedAt = Date.now();
@@ -492,7 +543,9 @@ function Workbench({ credits, refreshCredits, onSaved }) {
     try {
       await api.saveWork({
         generationId: task.id,
-        original: { url: image.previewUrl, mimeType: image.payload.type },
+        original: task.result.original?.url
+          ? task.result.original
+          : { url: image.previewUrl, mimeType: image.payload.type },
         effectImage: task.result.effectImage,
         params,
       });
@@ -560,6 +613,7 @@ function Workbench({ credits, refreshCredits, onSaved }) {
               value={room}
               options={rooms}
               onChange={setRoom}
+              placeholder="请选择空间类型"
             />
             <ThemePicker value={theme} onChange={setTheme} />
             <CustomStylePanel onSelect={(reference, prompt) => { setStyleReference(reference); setCustomStylePrompt(prompt) }} />
@@ -590,7 +644,7 @@ function Workbench({ credits, refreshCredits, onSaved }) {
             <div>
               <span className="section-kicker">02 / 设计结果</span>
               <h2>
-                {room} · {theme}
+                {room || "未选择空间"} · {theme}
               </h2>
             </div>
             <span className="state-label" aria-live="polite">
@@ -625,15 +679,10 @@ function Workbench({ credits, refreshCredits, onSaved }) {
               ) : (
                 <div className="result-empty">
                   {["creating", "polling"].includes(status) ? (
-                    <LoaderCircle className="spin" />
+                    <GenerationProgress elapsedMs={generationElapsedMs} />
                   ) : (
-                    <Sparkles size={30} />
+                    <><Sparkles size={30} /><span>生成后将在这里展示</span></>
                   )}
-                  <span>
-                    {["creating", "polling"].includes(status)
-                      ? "正在生成，请稍候…"
-                      : "生成后将在这里展示"}
-                  </span>
                 </div>
               )}
             </div>

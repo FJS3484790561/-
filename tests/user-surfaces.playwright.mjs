@@ -88,6 +88,9 @@ try {
       .getByLabel("上传房间照片")
       .setInputFiles({ name: "room.png", mimeType: "image/png", buffer: png });
     await page.getByRole("button", { name: /生成设计/ }).click();
+    await page.getByText("请先选择空间类型，再生成设计。").waitFor();
+    await page.getByLabel("空间类型").selectOption("客厅");
+    await page.getByRole("button", { name: /生成设计/ }).click();
     await page.getByText("设计方案已生成").waitFor();
     const slider = page.locator(".comparison-slider");
     const sliderBox = await slider.boundingBox();

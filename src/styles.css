@@ -138,6 +138,19 @@ h3 { color: #6d5a70; }
 .upload-guidance-card.is-bad strong { color: #b2636b; }
 .upload-guidance-card.is-bad p { color: #a78387; }
 .result-empty { color: #917c99; }
+.generation-progress { display: grid; justify-items: center; gap: 9px; width: min(330px, 88%); }
+.generation-progress strong { color: #765f7b; font-size: 14px; }
+.generation-progress p { margin: 0; color: #927f95; font-size: 12px; }
+.generation-progress small { color: #aa96a8; font-size: 10px; line-height: 1.5; }
+.generation-progress-track { width: 100%; height: 9px; overflow: hidden; border-radius: 999px; background: rgba(255,255,255,.62); box-shadow: inset 2px 2px 5px rgba(117,88,113,.1); }
+.generation-progress-track > span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #d98aaf, #b994d6, #d98aaf); background-size: 200% 100%; animation: progress-shimmer 1.7s linear infinite; transition: width 1s ease; }
+.generation-orbit { position: relative; display: grid; place-items: center; width: 72px; height: 72px; color: #ba6790; border-radius: 50%; background: rgba(255,255,255,.58); box-shadow: 0 8px 20px rgba(117,88,113,.1); animation: generation-float 2.4s ease-in-out infinite; }
+.generation-orbit span { position: absolute; width: 8px; height: 8px; border-radius: 50%; background: #d999b8; animation: generation-orbit 2.2s linear infinite; }
+.generation-orbit span:nth-child(2) { animation-delay: -.72s; }
+.generation-orbit span:nth-child(3) { animation-delay: -1.44s; }
+@keyframes progress-shimmer { to { background-position: -200% 0; } }
+@keyframes generation-float { 50% { transform: translateY(-5px); } }
+@keyframes generation-orbit { from { transform: rotate(0deg) translateX(43px) rotate(0deg); } to { transform: rotate(360deg) translateX(43px) rotate(-360deg); } }
 .comparison-block { margin-top: 25px; }
 .comparison-heading { display: flex; justify-content: space-between; align-items: end; gap: 14px; margin-bottom: 11px; }
 .comparison-heading h3 { margin: 0; font-size: 16px; }
