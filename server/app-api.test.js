@@ -18,7 +18,7 @@ async function call(api, path, { method = 'GET', body, cookie, contentType = 'ap
 }
 
 async function registerAndLogin(api, email) {
-  assert.equal((await call(api, '/api/auth/register', { method: 'POST', body: { email, password: 'correct-horse' } })).response.status, 201)
+  assert.equal((await api.authService.provisionUser({ email, password: 'correct-horse' })).ok, true)
   return login(api, email)
 }
 
@@ -80,8 +80,7 @@ test('overview route reports missing persistence as 503, not zero statistics', a
 test('uses HttpOnly session cookies and supports password reset without token disclosure', async () => {
   let resetMessage
   const runtime = createAppRuntime({ mailer: { sendPasswordReset: async (message) => { resetMessage = message } } })
-  const register = await call(runtime.api, '/api/auth/register', { method: 'POST', body: { email: 'user@example.com', password: 'correct-horse' } })
-  assert.equal(register.response.status, 201)
+  assert.equal((await runtime.authService.provisionUser({ email: 'user@example.com', password: 'correct-horse' })).ok, true)
   const login = await call(runtime.api, '/api/auth/login', { method: 'POST', body: { email: 'user@example.com', password: 'correct-horse' } })
   assert.match(login.cookie, /^session=.+; Path=\/; HttpOnly; SameSite=Lax;/u)
   assert.equal(JSON.stringify(login.data).includes('sessionToken'), false)

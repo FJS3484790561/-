@@ -7,8 +7,8 @@ import { RedemptionCodeService } from './redemption-code-service.js'
 async function fixture() {
   const authService = new AuthService({ reservedRegistrationEmails: ['admin@example.com'] })
   const admin = await authService.provisionUser({ email: 'admin@example.com', password: 'correct-horse' })
-  const user = await authService.register({ email: 'user@example.com', password: 'correct-horse' })
-  const other = await authService.register({ email: 'other@example.com', password: 'correct-horse' })
+  const user = await authService.provisionUser({ email: 'user@example.com', password: 'correct-horse' })
+  const other = await authService.provisionUser({ email: 'other@example.com', password: 'correct-horse' })
   const adminLogin = await authService.login({ email: 'admin@example.com', password: 'correct-horse' })
   const userLogin = await authService.login({ email: 'user@example.com', password: 'correct-horse' })
   const otherLogin = await authService.login({ email: 'other@example.com', password: 'correct-horse' })

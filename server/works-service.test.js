@@ -5,8 +5,8 @@ import { MemoryWorksStore, WorksService } from './works-service.js'
 
 async function fixture() {
   const authService = new AuthService({ store: new MemoryAuthStore() })
-  await authService.register({ email: 'user@example.com', password: 'correct-horse' })
-  await authService.register({ email: 'other@example.com', password: 'correct-horse' })
+  await authService.provisionUser({ email: 'user@example.com', password: 'correct-horse' })
+  await authService.provisionUser({ email: 'other@example.com', password: 'correct-horse' })
   const user = await authService.login({ email: 'user@example.com', password: 'correct-horse' })
   const other = await authService.login({ email: 'other@example.com', password: 'correct-horse' })
   return { authService, user, other, store: new MemoryWorksStore() }

@@ -140,6 +140,7 @@ const MIGRATIONS = [
 ]
 
 MIGRATIONS.push({ version: 4, sql: `CREATE TABLE user_styles (style_id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES app_users(entity_id) ON DELETE CASCADE, value_json TEXT NOT NULL); CREATE INDEX user_styles_user ON user_styles(user_id);` })
+MIGRATIONS.push({ version: 5, sql: `CREATE TABLE registration_challenges (challenge_key TEXT PRIMARY KEY, value_json TEXT NOT NULL);` })
 const LATEST_SCHEMA_VERSION = MIGRATIONS.at(-1).version
 
 function applyMigrations(database, targetVersion = LATEST_SCHEMA_VERSION) {

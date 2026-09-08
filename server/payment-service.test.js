@@ -7,8 +7,8 @@ import { MemoryPaymentStore, PaymentService } from './payment-service.js'
 async function fixture() {
   let now = Date.UTC(2026, 0, 1)
   const authService = new AuthService({ store: new MemoryAuthStore(), clock: () => now })
-  await authService.register({ email: 'user@example.com', password: 'correct-horse' })
-  await authService.register({ email: 'other@example.com', password: 'correct-horse' })
+  await authService.provisionUser({ email: 'user@example.com', password: 'correct-horse' })
+  await authService.provisionUser({ email: 'other@example.com', password: 'correct-horse' })
   const user = await authService.login({ email: 'user@example.com', password: 'correct-horse' })
   const other = await authService.login({ email: 'other@example.com', password: 'correct-horse' })
   const ledger = new CreditLedgerService({ authService, store: new MemoryCreditStore(), clock: () => now })

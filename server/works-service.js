@@ -54,6 +54,7 @@ export class WorksService {
     return {
       room: String(params.room ?? ''),
       theme: String(params.theme ?? ''),
+      ...(typeof params.userPrompt === 'string' && params.userPrompt.trim() ? { userPrompt: params.userPrompt.trim().slice(0, 2000) } : {}),
       ...(String(params.customStylePrompt ?? '').trim() ? { customStylePrompt: String(params.customStylePrompt).trim() } : {}),
     }
   }

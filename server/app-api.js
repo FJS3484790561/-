@@ -4,7 +4,10 @@ const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 const RATE_LIMIT_WINDOW_MS = 60_000
 const RATE_LIMIT_MAX = 30
 
-  const statusByCode = {
+const statusByCode = {
+  CODE_RATE_LIMITED: 429,
+  MAIL_UNAVAILABLE: 503,
+  REVISION_SOURCE_UNAVAILABLE: 503,
   UNAUTHORIZED: 401,
   FORBIDDEN: 403,
   NOT_FOUND: 404,
@@ -139,6 +142,7 @@ export class AppApi {
       return bodyResult.error ?? handler(bodyResult.value)
     }
 
+    if (method === 'POST' && pathname === '/api/auth/register/code') return withJsonBody(async (body) => safeResult(await this.authService.requestRegistrationCode(body.email, clientAddress)))
     if (method === 'POST' && pathname === '/api/auth/register') return withJsonBody(async (body) => safeResult(await this.authService.register(body), 201))
     if (method === 'POST' && pathname === '/api/auth/login') {
       return withJsonBody(async (body) => {
@@ -160,6 +164,8 @@ export class AppApi {
 
     if (method === 'POST' && pathname === '/api/generations') return withJsonBody(async (body) => safeResult(await this.generationService.createGeneration({ sessionToken, image: decodeImage(body.image), params: { ...(body.params ?? {}), styleReference: decodeImage(body.params?.styleReference) } }), 202))
     const generationMatch = pathname.match(/^\/api\/generations\/([^/]+)$/u)
+    const revisionMatch = pathname.match(/^\/api\/generations\/([^/]+)\/revisions$/u)
+    if (method === 'POST' && revisionMatch) return withJsonBody(async (body) => safeResult(await this.generationService.createRevision({ sessionToken, taskId: decodeURIComponent(revisionMatch[1]), prompt: body.prompt, styleReference: decodeImage(body.styleReference) }), 202))
     if (method === 'GET' && generationMatch) return safeResult(this.generationService.getGeneration({ sessionToken, taskId: decodeURIComponent(generationMatch[1]) }))
     const objectMatch = pathname.match(/^\/api\/objects\/([^/]+)$/u)
     if (method === 'GET' && objectMatch && this.objectStorage) {

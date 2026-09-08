@@ -11,8 +11,8 @@ const image = { type: 'image/jpeg', data: Buffer.from([0xff, 0xd8, 0xff, 0x00, 0
 
 async function memoryFixture() {
   const authService = new AuthService()
-  await authService.register({ email: 'style-a@example.com', password: 'correct-horse' })
-  await authService.register({ email: 'style-b@example.com', password: 'correct-horse' })
+  await authService.provisionUser({ email: 'style-a@example.com', password: 'correct-horse' })
+  await authService.provisionUser({ email: 'style-b@example.com', password: 'correct-horse' })
   return {
     authService,
     user: await authService.login({ email: 'style-a@example.com', password: 'correct-horse' }),
@@ -39,7 +39,7 @@ test('custom styles survive a SQLite close and reopen', async (context) => {
 
   let stores = createSqliteStores({ filename })
   let authService = new AuthService({ store: stores.auth })
-  await authService.register({ email: 'persist-style@example.com', password: 'correct-horse' })
+  await authService.provisionUser({ email: 'persist-style@example.com', password: 'correct-horse' })
   const login = await authService.login({ email: 'persist-style@example.com', password: 'correct-horse' })
   const service = new StyleService({ authService, store: stores.styles })
   assert.equal(service.create({ sessionToken: login.sessionToken, name: '持久风格', prompt: '自然木色', image }).ok, true)

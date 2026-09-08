@@ -27,7 +27,8 @@ const post = (path, body) => request(path, { method: 'POST', ...(body === undefi
 
 export const api = {
   session: () => request('/api/auth/session'),
-  register: (email, password) => post('/api/auth/register', { email, password }),
+  register: (email, password, verificationCode) => post('/api/auth/register', { email, password, verificationCode }),
+  requestRegistrationCode: (email) => post('/api/auth/register/code', { email }),
   login: (email, password) => post('/api/auth/login', { email, password }),
   logout: () => post('/api/auth/logout'),
   requestPasswordReset: (email) => post('/api/auth/password-reset/request', { email }),
@@ -35,6 +36,7 @@ export const api = {
   credits: () => request('/api/credits'),
   redeemCode: (code) => post('/api/redemption-codes/redeem', { code }),
   createGeneration: (payload) => post('/api/generations', payload),
+  reviseGeneration: (id, payload) => post(`/api/generations/${encodeURIComponent(id)}/revisions`, payload),
   generation: (id) => request(`/api/generations/${encodeURIComponent(id)}`),
   works: () => request('/api/works'),
   work: (id) => request(`/api/works/${encodeURIComponent(id)}`),
@@ -105,16 +107,12 @@ export async function fileToImage(file) {
   }
 }
 
-export async function styleReferenceFor(theme) {
-  const palette = { '现代简约': ['#f5f1eb', '#b7a58f'], '北欧': ['#f4f0e8', '#9eb7a2'], '日式': ['#eee8db', '#bd9670'], '奶油风': ['#fff0d8', '#d8a77c'], '原木风': ['#efe4d0', '#9b6e48'], '轻奢': ['#eee9e2', '#aa8d68'] }[theme] ?? ['#f4f0e8', '#9eb7a2']
-  const canvas = document.createElement('canvas'); canvas.width = 640; canvas.height = 480
-  const context = canvas.getContext('2d'); context.fillStyle = palette[0]; context.fillRect(0, 0, 640, 480)
-  context.fillStyle = '#d7c8b7'; context.fillRect(0, 300, 640, 180)
-  context.fillStyle = palette[1]; context.fillRect(110, 245, 420, 105); context.fillStyle = '#fff'; context.fillRect(155, 270, 330, 75)
-  context.fillStyle = '#b99672'; context.fillRect(280, 350, 80, 75); context.fillStyle = '#aebda9'; context.beginPath(); context.arc(80, 260, 46, 0, Math.PI * 2); context.fill()
-  const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.86))
-  const dataUrl = await readDataUrl(blob)
-  return { name: `style-${theme}.jpg`, type: 'image/jpeg', width: 640, height: 480, dataBase64: dataUrl.split(',', 2)[1] ?? '' }
+export async function styleReferenceFor(imageUrl) {
+  const response = await fetch(imageUrl)
+  if (!response.ok) throw new ApiError('STYLE_IMAGE_UNAVAILABLE', response.status)
+  const blob = await response.blob()
+  if (!['image/jpeg', 'image/png'].includes(blob.type)) throw new ApiError('STYLE_IMAGE_UNAVAILABLE')
+  return (await fileToImage(new File([blob], 'style-reference.jpg', { type: blob.type }))).payload
 }
 
 export async function pollGeneration(id, { interval = 350, signal, onUpdate } = {}) {

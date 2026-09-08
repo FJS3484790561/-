@@ -9,7 +9,7 @@ const params = { room: '客厅', theme: '现代简约', scale: '均衡', prefere
 
 async function fixture({ provider, providerTimeoutMs = 100, objectStorage = null, fetchImpl, lookupImpl } = {}) {
   const authService = new AuthService({ store: new MemoryAuthStore() })
-  await authService.register({ email: 'user@example.com', password: 'correct-horse' })
+  await authService.provisionUser({ email: 'user@example.com', password: 'correct-horse' })
   const login = await authService.login({ email: 'user@example.com', password: 'correct-horse' })
   const providers = new ProviderRegistry(provider ? { default: provider } : {})
   return { authService, token: login.sessionToken, service: new GenerationService({ authService, store: new MemoryGenerationStore(), providers, providerTimeoutMs, objectStorage, fetchImpl, lookupImpl }) }
@@ -41,7 +41,7 @@ test('requires an authenticated session and isolates task ownership', async () =
   const fixtureData = await fixture({ provider: { generate: async () => ({ effectImage: { url: '/result' } }) } })
   assert.deepEqual(await fixtureData.service.createGeneration({ sessionToken: 'invalid', image: { type: 'image/jpeg', data: jpeg }, params }), { ok: false, code: 'UNAUTHORIZED' })
   assert.deepEqual(await fixtureData.service.createGeneration({ image: { type: 'image/jpeg', data: jpeg }, params }), { ok: false, code: 'UNAUTHORIZED' })
-  await fixtureData.authService.register({ email: 'other@example.com', password: 'correct-horse' })
+  await fixtureData.authService.provisionUser({ email: 'other@example.com', password: 'correct-horse' })
   const otherLogin = await fixtureData.authService.login({ email: 'other@example.com', password: 'correct-horse' })
   const created = await fixtureData.service.createGeneration({ sessionToken: fixtureData.token, image: { type: 'image/jpeg', data: jpeg }, params })
   assert.deepEqual(fixtureData.service.getGeneration({ sessionToken: otherLogin.sessionToken, taskId: created.task.id }), { ok: false, code: 'NOT_FOUND' })

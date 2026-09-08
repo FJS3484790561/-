@@ -127,6 +127,7 @@ export function createSqliteStores({ filename } = {}) {
   const database = openSqliteDatabase({ filename })
   const runTransaction = transaction(database)
   const auth = {
+    registrationChallenges: new SqliteJsonMap(database, { table: 'registration_challenges', keyColumn: 'challenge_key' }),
     users: new SqliteJsonMap(database, { table: 'app_users', keyColumn: 'email', extras: { entity_id: (value) => value.id } }),
     sessions: new SqliteJsonMap(database, { table: 'auth_sessions', keyColumn: 'token_digest', extras: { user_id: (value) => value.userId } }),
     resetTokens: new SqliteJsonMap(database, { table: 'password_reset_tokens', keyColumn: 'token_digest', extras: { user_id: (value) => value.userId } }),

@@ -7,7 +7,7 @@ const DEFAULT_MAX_IMAGE_BYTES = 10 * 1024 * 1024
 export const DEFAULT_PROVIDER_TIMEOUT_MS = 110_000
 const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png'])
 const ALLOWED_ROOMS = new Set(['客厅', '卧室', '餐厅', '厨房', '书房'])
-const ALLOWED_THEMES = new Set(['现代简约', '北欧', '日式', '奶油风', '原木风', '轻奢'])
+const ALLOWED_THEMES = new Set(['现代简约', '北欧', '日式', '奶油风', '原木风', '轻奢', '中古风', '侘寂风', '自定义'])
 const ALLOWED_SCALES = new Set()
 
 const error = (code, fields = undefined) => ({ ok: false, code, ...(fields ? { fields } : {}) })
@@ -34,6 +34,10 @@ function validateRequest({ image, params }, maxImageBytes) {
 
   if (!ALLOWED_ROOMS.has(params?.room)) fields.room = '请选择有效的空间类型。'
   if (!ALLOWED_THEMES.has(params?.theme)) fields.theme = '请选择有效的设计风格。'
+  for (const field of ['userPrompt', 'editPrompt', 'customStylePrompt']) {
+    if (params?.[field] !== undefined && (typeof params[field] !== 'string' || params[field].length > 2000)) fields[field] = '描述请控制在 2000 字以内。'
+  }
+  if (params?.styleReference && (!ALLOWED_IMAGE_TYPES.has(params.styleReference.type) || !matchesImageSignature(params.styleReference.type, imageBytes(params.styleReference)) || imageBytes(params.styleReference).length > maxImageBytes)) fields.styleReference = '风格参考图无效。'
   return Object.keys(fields).length ? error('VALIDATION_ERROR', fields) : null
 }
 
@@ -164,7 +168,41 @@ export class GenerationService {
     this.logger = logger
   }
 
-  createGeneration({ sessionToken, image, params }) {
+  async createRevision({ sessionToken, taskId, prompt, styleReference }) {
+    const user = this.authService.getSession(sessionToken)
+    if (!user) return error('UNAUTHORIZED')
+    const parent = this.store.tasks.get(taskId)
+    if (!parent || parent.userId !== user.id) return error('NOT_FOUND')
+    if (parent.status !== 'succeeded' || typeof prompt !== 'string' || !prompt.trim() || prompt.length > 2000) return error('VALIDATION_ERROR')
+    try {
+      const result = parent.result.effectImage
+      let bytes
+      let type
+      if (result.objectKey && this.objectStorage) {
+        const metadata = this.objectStorage.metadataFor(result.objectKey)
+        if (!metadata || metadata.ownerId !== user.id) return error('NOT_FOUND')
+        const stored = await this.objectStorage.get({ key: result.objectKey })
+        bytes = Buffer.from(stored.body)
+        type = metadata.mimeType
+      } else {
+        const stored = storedImageBytes(result)
+        if (!stored) return error('REVISION_SOURCE_UNAVAILABLE')
+        bytes = stored.bytes; type = stored.mimeType
+      }
+      return this.#create({ sessionToken, image: { data: bytes, type, name: 'current-result', width: parent.input.width, height: parent.input.height }, params: { ...parent.params, styleReference, editPrompt: prompt.trim() } }, parent)
+    } catch {
+      return error('REVISION_SOURCE_UNAVAILABLE')
+    }
+  }
+
+  createGeneration(request) {
+    // Revision semantics can only be selected through the owner-checked revision endpoint.
+    const params = { ...request.params }
+    delete params.editPrompt
+    return this.#create({ ...request, params })
+  }
+
+  #create({ sessionToken, image, params }, parent = null) {
     const user = this.authService.getSession(sessionToken)
     if (!user) return Promise.resolve(error('UNAUTHORIZED'))
     const validation = validateRequest({ image, params }, this.maxImageBytes)
@@ -172,6 +210,11 @@ export class GenerationService {
     const id = `generation_${randomUUID()}`
     const dimensions = Number.isFinite(image.width) && Number.isFinite(image.height) ? { width: image.width, height: image.height } : {}
     const task = { id, traceId: id, userId: user.id, status: 'queued', createdAt: this.clock(), updatedAt: this.clock(), input: { name: image.name ?? 'upload', type: image.type, size: imageBytes(image).length, ...dimensions }, params: { ...params, ...(params.styleReference ? { styleReference: { type: params.styleReference.type, size: imageBytes(params.styleReference)?.length ?? 0 } } : {}) } }
+    if (parent) {
+      task.parentTaskId = parent.id
+      task.rootTaskId = parent.rootTaskId ?? parent.id
+      task.originalRoom = parent.originalRoom ?? parent.result.original
+    }
     let reservation
     try {
       const prepared = this.store.transaction(() => {
@@ -267,7 +310,7 @@ export class GenerationService {
           throw settlementError
         }
         task.status = 'succeeded'
-        task.result = { original: { ...task.input }, effectImage }
+        task.result = { original: { ...(task.originalRoom ?? task.input) }, effectImage }
         task.updatedAt = this.clock()
         this.store.tasks.set(task.id, task)
       })
@@ -300,7 +343,7 @@ export class GenerationService {
   }
 
   #publicTask(task) {
-    return { id: task.id, traceId: task.traceId ?? task.id, status: task.status, createdAt: task.createdAt, updatedAt: task.updatedAt, input: task.input, ...(task.timings ? { timings: { ...task.timings } } : {}), ...(task.status === 'succeeded' ? { result: task.result } : {}), ...(task.status === 'failed' ? { error: task.error } : {}) }
+    return { id: task.id, traceId: task.traceId ?? task.id, status: task.status, parentTaskId: task.parentTaskId ?? null, rootTaskId: task.rootTaskId ?? task.id, createdAt: task.createdAt, updatedAt: task.updatedAt, input: task.input, ...(task.timings ? { timings: { ...task.timings } } : {}), ...(task.status === 'succeeded' ? { result: task.result } : {}), ...(task.status === 'failed' ? { error: task.error } : {}) }
   }
 
   async #storeImage(task, kind, image) {

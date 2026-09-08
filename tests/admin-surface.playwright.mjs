@@ -1,26 +1,21 @@
 import { chromium } from 'playwright'
-import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { mkdtempSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createServer as createViteServer } from 'vite'
 import { createServer as createHttpServer } from 'node:http'
+import { createRuntimeFromEnvironment } from '../server/persistence/runtime-environment.js'
+import { createAppHttpServer } from '../server/http-server.js'
 
 const baseUrl = 'http://127.0.0.1:4174/admin'
 const apiUrl = 'http://127.0.0.1:8797'
 const providerUrl = 'http://127.0.0.1:8798/v1/images/edits'
 const adminPassword = 'qa-admin-password'
 const userPassword = 'qa-user-password'
-const processes = []
 const fixtureDirectory = mkdtempSync(join(tmpdir(), 'admin-overview-browser-'))
 const screenshotDirectory = resolve('artifacts/admin-overview')
 mkdirSync(screenshotDirectory, { recursive: true })
-
-function start(command, args, env = {}) {
-  const child = spawn(command, args, { cwd: process.cwd(), env: { ...globalThis.process.env, ...env }, stdio: 'ignore' })
-  processes.push(child)
-}
 
 async function waitFor(url) {
   for (let attempt = 0; attempt < 80; attempt += 1) {
@@ -41,7 +36,10 @@ const providerServer = createHttpServer((request, response) => {
 })
 await new Promise((resolve) => providerServer.listen(8798, '127.0.0.1', resolve))
 process.env.API_ORIGIN = apiUrl
-start(process.execPath, ['server/start-api.js'], { NODE_ENV: 'development', ADMIN_EMAIL: 'admin@example.com', ADMIN_PASSWORD: adminPassword, APP_DATABASE_PATH: join(fixtureDirectory, 'app.sqlite'), API_PORT: '8797', APP_ALLOWED_ORIGINS: 'http://127.0.0.1:4174' })
+const runtime = createRuntimeFromEnvironment({ environment: { NODE_ENV: 'development', ADMIN_EMAIL: 'admin@example.com', APP_DATABASE_PATH: join(fixtureDirectory, 'app.sqlite'), APP_ALLOWED_ORIGINS: 'http://127.0.0.1:4174' } })
+await runtime.provisionAdmin({ password: adminPassword })
+const apiServer = createAppHttpServer({ api: runtime.api })
+await new Promise((resolve) => apiServer.listen(8797, '127.0.0.1', resolve))
 const vite = await createViteServer({ server: { host: '127.0.0.1', port: 4174 } })
 await vite.listen()
 await Promise.all([waitFor(`${apiUrl}/api/health`), waitFor(baseUrl)])
@@ -50,8 +48,8 @@ const browser = await chromium.launch({ headless: true })
 const results = []
 try {
   const ordinaryEmail = `ordinary-${Date.now()}@example.com`
-  const register = await fetch(`${apiUrl}/api/auth/register`, { method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:4174' }, body: JSON.stringify({ email: ordinaryEmail, password: userPassword }) })
-  if (register.status !== 201) throw new Error('Could not prepare ordinary user')
+  const register = await runtime.authService.provisionUser({ email: ordinaryEmail, password: userPassword })
+  if (!register.ok) throw new Error('Could not prepare ordinary user')
 
   const permissionPage = await browser.newPage({ viewport: { width: 390, height: 844 } })
   await permissionPage.goto(baseUrl)
@@ -178,7 +176,8 @@ try {
   await browser.close()
   await vite.close()
   await new Promise((resolve) => providerServer.close(resolve))
-  for (const child of processes) child.kill()
+  await new Promise((resolve) => apiServer.close(resolve))
+  runtime.close()
 }
 
 console.log(JSON.stringify(results, null, 2))

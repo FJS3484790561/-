@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { createAppRuntime } from '../app-runtime.js'
+import { createMailer } from '../mailer.js'
 import { createObjectStorageFromEnvironment } from './object-storage.js'
 import { createSqliteStores } from './sqlite-stores.js'
 
@@ -21,6 +22,7 @@ function secureCookiesSetting(environment, production) {
 }
 
 export function createRuntimeFromEnvironment({ environment = process.env, mailer, paymentProvider, generationProvider } = {}) {
+  mailer ??= createMailer(environment)
   const production = environment.NODE_ENV === 'production'
   const allowedOrigins = (environment.APP_ALLOWED_ORIGINS ?? '').split(',').map((origin) => origin.trim()).filter(Boolean)
   const filename = environment.APP_DATABASE_PATH

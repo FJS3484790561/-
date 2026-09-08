@@ -5,8 +5,8 @@ import { AdminProviderService, MemoryAdminProviderStore } from './admin-provider
 
 async function fixture({ testProvider = async () => ({ ok: true, httpStatus: 200 }), logger = { info() {}, error() {} } } = {}) {
   const authService = new AuthService({ store: new MemoryAuthStore() })
-  const admin = await authService.register({ email: 'admin@example.com', password: 'correct-horse' })
-  const user = await authService.register({ email: 'user@example.com', password: 'correct-horse' })
+  const admin = await authService.provisionUser({ email: 'admin@example.com', password: 'correct-horse' })
+  const user = await authService.provisionUser({ email: 'user@example.com', password: 'correct-horse' })
   const adminLogin = await authService.login({ email: 'admin@example.com', password: 'correct-horse' })
   const userLogin = await authService.login({ email: 'user@example.com', password: 'correct-horse' })
   const service = new AdminProviderService({

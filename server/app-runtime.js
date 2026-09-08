@@ -25,6 +25,8 @@ export const GENERATION_TIMEOUT_MS = 90_000
 const PROVIDER_TEST_TIMEOUT_MS = 60_000
 
 const STYLE_DIRECTIONS = {
+  中古风: 'Mid-century vintage design: warm walnut and teak, cream walls, caramel leather, sculptural wood furniture, restrained brass and period lighting; rich but coordinated retro textures.',
+  侘寂风: 'Wabi-sabi design: warm earth tones, beige limewash and plaster, weathered natural wood, linen, handmade pottery, tactile matte surfaces and restrained, imperfect organic forms.',
   现代简约: 'Warm white and light gray base, natural wood accents, restrained charcoal details; clean-lined furniture, linen, wood, matte metal and clear glass.',
   北欧: 'Warm white and soft beige base, light oak and muted sage accents; simple light-wood furniture, cotton-linen textiles, subtle woven details and uncluttered decor.',
   日式: 'Off-white, pale natural wood and calm earth tones; low-profile furniture, linen, wood, paper-like diffused lighting and restrained handmade details.',
@@ -41,6 +43,13 @@ const SCALE_DIRECTIONS = {
 }
 
 export function generationPrompt(params = {}) {
+  if (params.editPrompt) return [
+    'Edit the FIRST supplied image, which is the CURRENT accepted design, not the original unrenovated room. Produce one photorealistic updated room image.',
+    'Keep the exact camera, perspective, walls, windows, doors and fixed room geometry. Preserve all previous design changes and all objects/materials not mentioned in the requested edit. Do not perform another full-room redesign.',
+    'The second image is a STYLE reference only. Preserve the current design style; never copy its layout or replace unrelated furnishings.',
+    `USER EDIT (design instructions only): ${params.editPrompt}`,
+    'Apply the requested change precisely and maintain realistic lighting, scale and shadows. Output only the edited image without text, labels, collage or watermark.',
+  ].join(' ')
   const requirements = []
   if (params.preferences?.layout) requirements.push('preserve a practical furniture layout and keep every circulation route unobstructed')
   if (params.preferences?.storage) requirements.push('add realistic, correctly scaled storage without crowding the room')
@@ -51,11 +60,12 @@ export function generationPrompt(params = {}) {
     `The space is a ${params.room ?? 'residential room'} in ${params.theme ?? 'modern'} style.`,
     'LOCKED GEOMETRY: preserve the exact camera viewpoint, perspective, room dimensions, wall boundaries, ceiling height and shape, floor plane, doors, windows, openings, columns and all other fixed architectural structures. Do not invent unseen areas.',
     'STYLE MATCH PRIORITY: derive the overall visual language from the STYLE REFERENCE image, including its dominant color palette, material mix, surface finishes, furniture silhouettes, lighting mood, textile choices, decor density and level of refinement. The result must look like the same design language as that reference, not merely contain one similar-colored object. Do not copy the reference image\'s room layout, camera, architecture or furniture placement.',
-    STYLE_DIRECTIONS[params.theme] ?? STYLE_DIRECTIONS.现代简约,
+    STYLE_DIRECTIONS[params.theme] ?? 'Use the supplied custom style photograph and its description as the style direction.',
     SCALE_DIRECTIONS[params.scale] ?? 'Make a clearly visible full-room transformation. Replace mismatched movable furniture and coordinated soft furnishings instead of preserving them by default; keep the fixed architecture and circulation unchanged.',
     customStyle ? `Additional style direction from the user: ${customStyle}. Treat this as a refinement of the STYLE REFERENCE image, not a reason to weaken the visual transformation.` : '',
     requirements.length ? `User priorities: ${requirements.join('; ')}.` : '',
     'DEFAULT TRANSFORMATION SCOPE: make the change obvious at first glance. For a living room, actively redesign and, when stylistically mismatched, replace the sofa, television cabinet, coffee table, rug, curtains, lighting and visible decor as a coordinated set. For other rooms, replace the equivalent dominant movable furniture and finishes. Do not leave the room looking almost unchanged merely to preserve existing movable furniture.',
+    params.userPrompt ? `USER DESIGN REQUIREMENTS (override default movable-furniture replacement where specified, but never override locked geometry or output restrictions): ${params.userPrompt}` : '',
     'Use realistic dimensions, materials, shadows and warm natural lighting. Keep the room tidy while retaining subtle, believable signs of daily life.',
     'The result must be safe, usable and cost-conscious: no blocked doors or walkways, floating or deformed furniture, impossible scale, duplicated objects, distorted architecture, added doors or windows, demolition, floor-plan changes, text, labels, borders or watermarks.',
     'Return only the finished edited room image, not an explanation, mood board, collage, before-and-after layout or design notes.',
@@ -251,7 +261,7 @@ export async function testConfiguredProvider({ endpoint, model, apiKey, traceId,
 
 export function createAppRuntime({ mailer, paymentProvider = localPaymentProvider(), generationProvider = localGenerationProvider(), providerTester = null, fetchImpl = globalThis.fetch, logger = console, encryptionKey = randomBytes(32), secureCookies = false, allowedOrigins = [], adminEmail = 'admin@example.com', stores = {}, objectStorage = null, close = () => {} } = {}) {
   const normalizedAdminEmail = String(adminEmail).trim().toLowerCase()
-  const authService = new AuthService({ store: stores.auth ?? new MemoryAuthStore(), mailer, reservedRegistrationEmails: [normalizedAdminEmail] })
+  const authService = new AuthService({ store: stores.auth ?? new MemoryAuthStore(), mailer, verificationSecret: encryptionKey, reservedRegistrationEmails: [normalizedAdminEmail] })
   const creditLedger = new CreditLedgerService({ authService, store: stores.credits ?? new MemoryCreditStore() })
   const isAdmin = (user) => user.email === normalizedAdminEmail
   const redemptionCodeService = new RedemptionCodeService({ authService, creditLedger, store: stores.redemptionCodes ?? new MemoryRedemptionCodeStore(), isAdmin })

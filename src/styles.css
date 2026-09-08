@@ -289,3 +289,17 @@ h3 { color: #6d5a70; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
 }
+.verification-row { display: flex; align-items: end; gap: 10px; }
+.verification-row .input-field { min-width: 0; flex: 1; }
+.verification-row .secondary-button { width: auto; flex-shrink: 0; }
+.input-field textarea { width: 100%; min-width: 0; padding: 12px; font: inherit; color: inherit; border: 1px solid #ead6e2; border-radius: 12px; resize: vertical; background: #fffafd; }
+.custom-style-add .theme-art { display: grid; place-items: center; border: 1px dashed #b886a5; background: #fff4fa; }
+.custom-style-dialog { max-height: 88dvh; overflow-y: auto; }
+.style-preview { width: 100%; max-height: 180px; object-fit: contain; }
+.refine-area, .refine-area .dialog-actions { flex-wrap: wrap; }
+.revision-history { margin-top: 16px; min-width: 0; }
+.revision-history p { color: #806b82; font-size: 12px; }
+.revision-history > div { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px; }
+.revision-history button { flex: 0 0 90px; border: 2px solid transparent; border-radius: 12px; padding: 5px; color: #795f75; background: #fff7fb; }
+.revision-history button[aria-pressed="true"] { border-color: #b86e98; }
+.revision-history img { width: 76px; height: 60px; object-fit: contain; display: block; }

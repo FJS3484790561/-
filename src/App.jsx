@@ -12,6 +12,7 @@ import {
   LoaderCircle,
   LogOut,
   Menu,
+  Plus,
   RefreshCw,
   ShieldCheck,
   Sparkles,
@@ -26,6 +27,8 @@ import styleJapanese from "./assets/style-japanese.jpg";
 import styleCream from "./assets/style-cream.jpg";
 import styleNaturalWood from "./assets/style-natural-wood.jpg";
 import styleLightLuxury from "./assets/style-light-luxury.jpg";
+import styleMidCentury from "./assets/style-mid-century.jpg";
+import styleWabiSabi from "./assets/style-wabi-sabi.jpg";
 import uploadGoodPhoto from "./assets/upload-good.jpg";
 import uploadBadPhoto from "./assets/upload-bad.jpg";
 
@@ -36,6 +39,8 @@ const themes = [
   { name: "奶油风", image: styleCream, description: "柔和、圆润、温暖" },
   { name: "原木风", image: styleNaturalWood, description: "自然、质朴、有温度" },
   { name: "轻奢", image: styleLightLuxury, description: "精致、沉稳、有层次" },
+  { name: "中古风", image: styleMidCentury, description: "复古、温润、有质感" },
+  { name: "侘寂风", image: styleWabiSabi, description: "自然、克制、松弛" },
 ];
 const rooms = ["客厅", "卧室", "餐厅", "厨房", "书房"];
 const packs = [
@@ -57,6 +62,9 @@ const errorCopy = {
   UNAUTHORIZED: "登录状态已失效，请重新登录。",
   FILE_READ_FAILED: "无法读取这张图片，请重新选择。",
   INVALID_RESPONSE: "服务响应异常，请稍后重试。",
+  INVALID_VERIFICATION_CODE: "验证码错误或已过期，请重新获取。",
+  CODE_RATE_LIMITED: "验证码发送太频繁，请稍后再试。",
+  MAIL_UNAVAILABLE: "验证码暂时发送失败，请稍后重试。",
   NETWORK_ERROR: "无法连接本地服务，请确认服务已启动。",
   INVALID_REDEMPTION_CODE: "兑换码无效，请检查后重试。",
   REDEMPTION_CODE_ALREADY_USED: "这个兑换码你已经使用过了。",
@@ -86,12 +94,21 @@ function AuthScreen({ onAuthenticated }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [token, setToken] = useState("");
+  const [verificationCode, setVerificationCode] = useState("");
+  const [codeBusy, setCodeBusy] = useState(false);
+  const [codeCooldown, setCodeCooldown] = useState(0);
+  useEffect(() => {
+    if (!codeCooldown) return undefined;
+    const timer = window.setTimeout(() => setCodeCooldown((seconds) => Math.max(0, seconds - 1)), 1000);
+    return () => window.clearTimeout(timer);
+  }, [codeCooldown]);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState(null);
   const switchMode = (next) => {
     setMode(next);
     setPassword("");
     setToken("");
+    setVerificationCode("");
     setNotice(null);
   };
   const submit = async (event) => {
@@ -100,7 +117,7 @@ function AuthScreen({ onAuthenticated }) {
     setNotice(null);
     try {
       if (mode === "register") {
-        await api.register(email, password);
+        await api.register(email, password, verificationCode);
         await api.login(email, password);
         onAuthenticated((await api.session()).user);
       } else if (mode === "login")
@@ -189,12 +206,13 @@ function AuthScreen({ onAuthenticated }) {
                 type="email"
                 autoComplete="email"
                 value={email}
-                onChange={(event) => setEmail(event.target.value)}
+                onChange={(event) => { setEmail(event.target.value); setVerificationCode('') }}
                 required
                 placeholder="name@example.com"
               />
             </label>
           )}
+          {mode === "register" && <div className="verification-row"><label className="input-field"><span>邮箱验证码</span><input value={verificationCode} onChange={(event) => setVerificationCode(event.target.value.replace(/\D/gu, ''))} inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength="6" required placeholder="6 位验证码" /></label><button className="secondary-button" type="button" disabled={codeBusy || codeCooldown > 0 || !email} onClick={async () => { setCodeBusy(true); setNotice(null); try { await api.requestRegistrationCode(email); setCodeCooldown(60); setNotice({ tone: "success", text: "若此邮箱可注册，验证码已发送，10 分钟内有效。请检查收件箱和垃圾邮件。" }) } catch (error) { setNotice({ tone: "error", text: messageFor(error) }) } finally { setCodeBusy(false) } }}>{codeBusy ? "发送中" : codeCooldown > 0 ? `${codeCooldown} 秒后重发` : "获取验证码"}</button></div>}
           {["login", "register", "reset"].includes(mode) && (
             <label className="input-field">
               <span>{mode === "reset" ? "新密码" : "密码"}</span>
@@ -337,19 +355,31 @@ function GenerationProgress({ elapsedMs }) {
   );
 }
 
-function ThemePicker({ value, onChange }) {
+function ThemePicker({ value, onChange, styles, onCustom, onAdd }) {
   return <div className="field"><span>设计风格 · 图片参考</span><div className="theme-picker" role="radiogroup" aria-label="设计风格">
     {themes.map((theme) => <button key={theme.name} type="button" className={`theme-card ${value === theme.name ? "selected" : ""}`} aria-pressed={value === theme.name} onClick={() => onChange(theme.name)}>
       <span className="theme-art"><img src={theme.image} alt="" /></span><strong>{theme.name}</strong><small>{theme.description}</small>
     </button>)}
+    {styles.map((style) => <button key={style.id} type="button" className={`theme-card ${value === style.id ? 'selected' : ''}`} aria-pressed={value === style.id} onClick={() => onCustom(style)}><span className="theme-art"><img src={`data:${style.image.type};base64,${style.image.dataBase64}`} alt="" /></span><strong>{style.name}</strong><small>我的风格 · 仅自己可见</small></button>)}
+    <button type="button" className="theme-card custom-style-add" onClick={onAdd}><span className="theme-art"><Plus size={30} /></span><strong>自定义风格</strong><small>添加参考图</small></button>
   </div></div>
 }
 
-function CustomStylePanel({ onSelect }) {
-  const [styles, setStyles] = useState([]); const [file, setFile] = useState(null); const [name, setName] = useState(''); const [prompt, setPrompt] = useState(''); const [message, setMessage] = useState('')
-  useEffect(() => { api.styles().then((result) => setStyles(result.styles ?? [])).catch(() => {}) }, [])
-  async function save() { if (!file || !name.trim() || !prompt.trim()) { setMessage('请上传风格图，并填写名称和风格描述。'); return } try { const result = await api.createStyle({ name, prompt, image: file.payload }); setStyles((current) => [result.style, ...current]); onSelect({ ...file.payload }, prompt); setMessage('风格已保存，仅你本人可见。'); setFile(null); setName(''); setPrompt('') } catch (error) { setMessage(messageFor(error, '风格保存失败。')) } }
-  return <div className="custom-style-panel"><div className="custom-style-title"><span>自定义风格</span><small>上传一张风格参考图并保存复用</small></div><div className="custom-style-row"><label className="secondary-button custom-upload"><ImagePlus size={15} />{file ? file.name : '选择风格图'}<input type="file" accept="image/jpeg,image/png" onChange={async (event) => { const chosen = event.target.files?.[0]; if (chosen) setFile({ name: chosen.name, payload: await fileToImage(chosen).catch(() => null) }) }} /></label><input value={name} onChange={(event) => setName(event.target.value)} placeholder="风格名称" /><input value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="例如：暖白、浅木、亚麻" /><button className="secondary-button" type="button" onClick={save}>保存</button></div>{styles.length > 0 && <div className="saved-style-list">{styles.map((style) => <button key={style.id} type="button" onClick={() => onSelect({ type: style.image.type, dataBase64: style.image.dataBase64 }, style.prompt)}>{style.name}</button>)}</div>}{message && <small className="custom-style-message">{message}</small>}</div>
+function CustomStylePanel({ onSaved, onClose }) {
+  const [file, setFile] = useState(null);
+  const [name, setName] = useState('');
+  const [prompt, setPrompt] = useState('');
+  const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false);
+  async function save(event) {
+    event.preventDefault();
+    if (!file?.payload || !name.trim() || !prompt.trim() || busy) return;
+    setBusy(true);
+    try { const result = await api.createStyle({ name, prompt, image: file.payload }); onSaved(result.style) }
+    catch (error) { setMessage(messageFor(error, '风格保存失败。')) }
+    finally { setBusy(false) }
+  }
+  return <div className="backdrop"><section className="dialog custom-style-dialog" role="dialog" aria-modal="true" aria-labelledby="custom-style-title"><header className="dialog-header"><div><h2 id="custom-style-title">自定义风格</h2><p>保存后仅你本人可见，可重复选择使用。</p></div><button type="button" className="icon-button" disabled={busy} onClick={onClose} aria-label="关闭自定义风格"><X /></button></header><form className="auth-form" onSubmit={save}><label className="input-field"><span>风格参考图</span><input type="file" accept="image/jpeg,image/png" disabled={busy} onChange={async (event) => { const chosen = event.target.files?.[0]; if (!chosen) return; setFile(null); if (!['image/jpeg','image/png'].includes(chosen.type) || chosen.size > 10 * 1024 * 1024) { setMessage('请选择 10MB 以内的 JPEG 或 PNG 图片。'); return } setBusy(true); try { setFile(await fileToImage(chosen)); setMessage('') } catch (error) { setMessage(messageFor(error)) } finally { setBusy(false) } }} /></label>{file && <img className="style-preview" src={file.previewUrl} alt="自定义风格预览" />}<label className="input-field"><span>风格名称</span><input value={name} required maxLength="80" onChange={(event) => setName(event.target.value)} /></label><label className="input-field"><span>风格描述</span><textarea value={prompt} required maxLength="600" rows="3" onChange={(event) => setPrompt(event.target.value)} placeholder="例如：暖白墙面、浅木家具、亚麻窗帘" /></label><Notice tone="error">{message}</Notice><button className="primary-button" disabled={busy || !file} type="submit">{busy ? '处理中…' : '保存并使用'}</button></form></section></div>
 }
 
 function UploadGuidance({ expanded, onToggle }) {
@@ -385,6 +415,13 @@ function Workbench({ credits, refreshCredits, onSaved }) {
   const [room, setRoom] = useState("");
   const [styleReference, setStyleReference] = useState(null);
   const [customStylePrompt, setCustomStylePrompt] = useState('');
+  const [userPrompt, setUserPrompt] = useState('');
+  const [history, setHistory] = useState([]);
+  const [styles, setStyles] = useState([]);
+  const [customStyleId, setCustomStyleId] = useState(null);
+  const [customOpen, setCustomOpen] = useState(false);
+  const [designParams, setDesignParams] = useState(null);
+  const [pendingRevision, setPendingRevision] = useState(null);
   const [image, setImage] = useState(null);
   const [task, setTask] = useState(null);
   const [status, setStatus] = useState("empty");
@@ -394,14 +431,25 @@ function Workbench({ credits, refreshCredits, onSaved }) {
   const [showUploadGuidance, setShowUploadGuidance] = useState(true);
   const [editOpen, setEditOpen] = useState(false);
   const [editPrompt, setEditPrompt] = useState("");
-  const [candidateTask, setCandidateTask] = useState(null);
   const [editBusy, setEditBusy] = useState(false);
   const [generationStartedAt, setGenerationStartedAt] = useState(null);
   const [generationElapsedMs, setGenerationElapsedMs] = useState(0);
   const inputRef = useRef(null);
   const pollAbortRef = useRef(null);
   useEffect(() => () => pollAbortRef.current?.abort(), []);
-  useEffect(() => { let active = true; styleReferenceFor(theme).then((value) => active && setStyleReference(value)); return () => { active = false } }, [theme]);
+  useEffect(() => { let active = true; api.styles().then((result) => { if (active) setStyles(result.styles ?? []) }).catch(() => { if (active) setNotice({ tone: 'error', text: '自定义风格加载失败，请刷新后重试。' }) }); return () => { active = false } }, []);
+  useEffect(() => {
+    if (theme === '自定义') return undefined;
+    let active = true;
+    styleReferenceFor(themes.find((item) => item.name === theme).image)
+      .then((value) => { if (active) setStyleReference(value) })
+      .catch(() => { if (active) setNotice({ tone: 'error', text: '风格参考图加载失败，请重新选择。' }) });
+    return () => { active = false };
+  }, [theme]);
+  const selectCustomStyle = (style) => {
+    setTheme('自定义'); setCustomStyleId(style.id); setCustomStylePrompt(style.prompt);
+    setStyleReference({ type: style.image.type, dataBase64: style.image.dataBase64 });
+  };
   useEffect(() => {
     if (!["creating", "polling"].includes(status) || !generationStartedAt) return undefined;
     const update = () => setGenerationElapsedMs(Date.now() - generationStartedAt);
@@ -409,7 +457,7 @@ function Workbench({ credits, refreshCredits, onSaved }) {
     const timer = window.setInterval(update, 1000);
     return () => window.clearInterval(timer);
   }, [generationStartedAt, status]);
-  const params = { room, theme, styleReference, customStylePrompt };
+  const params = { room, theme, styleReference, customStylePrompt, userPrompt };
   const resultUrl = task?.result?.effectImage?.url;
   const statusText = {
     empty: "上传一张房间照片开始设计",
@@ -420,11 +468,10 @@ function Workbench({ credits, refreshCredits, onSaved }) {
     failed: "生成未完成，可以重试",
   }[status];
   const chooseFile = async (event) => {
+    if (editBusy || pendingRevision || ['creating', 'polling'].includes(status)) return;
     const file = event.target.files?.[0];
     if (!file) return;
     setNotice(null);
-    setTask(null);
-    setSaved(false);
     if (
       !["image/jpeg", "image/png"].includes(file.type) ||
       file.size > 10 * 1024 * 1024
@@ -438,6 +485,7 @@ function Workbench({ credits, refreshCredits, onSaved }) {
     }
     try {
       setImage(await fileToImage(file));
+      setTask(null); setHistory([]); setSaved(false); setDesignParams(null);
       setStatus("ready");
       setShowUploadGuidance(false);
     } catch (error) {
@@ -505,6 +553,8 @@ function Workbench({ credits, refreshCredits, onSaved }) {
         creditSettlementMs: completed.timings?.creditSettlementMs ?? null,
       });
       if (completed.status === "succeeded") {
+        setHistory([completed]);
+        setDesignParams(params);
         setStatus("success");
         setNotice({ tone: "success", text: "生成成功，已消耗 1 次额度。" });
         refreshCredits();
@@ -547,7 +597,7 @@ function Workbench({ credits, refreshCredits, onSaved }) {
           ? task.result.original
           : { url: image.previewUrl, mimeType: image.payload.type },
         effectImage: task.result.effectImage,
-        params,
+        params: designParams ?? params,
       });
       setSaved(true);
       setNotice({ tone: "success", text: "作品已保存到“我的作品”。" });
@@ -562,16 +612,25 @@ function Workbench({ credits, refreshCredits, onSaved }) {
     }
   };
   const refine = async () => {
-    if (!editPrompt.trim() || !image || !styleReference || !task) return;
-    setEditBusy(true); setNotice(null); setCandidateTask(null);
+    if ((!pendingRevision && !editPrompt.trim()) || !image || !task || editBusy || saving) return;
+    setEditBusy(true); setNotice(null);
+    const controller = new AbortController(); pollAbortRef.current = controller;
     try {
-      const created = await api.createGeneration({ image: image.payload, params: { ...params, customStylePrompt: `${customStylePrompt ? `${customStylePrompt}; ` : ""}局部修改要求：${editPrompt.trim()}` } });
-      const completed = await pollGeneration(created.task.id, { onUpdate: setCandidateTask });
-      setCandidateTask(completed); console.info("[Generation Edit]", { stage: completed.status, traceId: completed.traceId });
+      let revisionId = pendingRevision;
+      if (!revisionId) {
+        const created = await api.reviseGeneration(task.id, { prompt: editPrompt.trim(), styleReference: designParams?.styleReference ?? styleReference });
+        revisionId = created.task.id; setPendingRevision(revisionId);
+      }
+      const completed = await pollGeneration(revisionId, { signal: controller.signal });
+      setPendingRevision(null);
+      console.info("[Generation Edit]", { stage: completed.status, traceId: completed.traceId });
+      if (completed.status === 'succeeded') {
+        setHistory((items) => [...items, completed]); setTask(completed); setSaved(false); setEditOpen(false); setEditPrompt('');
+        setNotice({ tone: 'success', text: '修改完成，已切换到新版本。可继续修改或回退；本次消耗 1 次额度。' });
+      }
       if (completed.status !== "succeeded") setNotice({ tone: "error", text: completed.error?.message ?? "二次修改失败，本次不会扣除额度。" });
-    } catch (error) { setNotice({ tone: "error", text: messageFor(error, "二次修改失败，本次不会扣除额度。") }) } finally { setEditBusy(false) }
+    } catch (error) { if (error?.name !== 'AbortError') setNotice({ tone: "error", text: messageFor(error, "查询修改结果失败，请勿重复提交；请稍后重试查询。") }) } finally { setEditBusy(false); refreshCredits() }
   };
-  const downloadCandidate = () => { const url = candidateTask?.result?.effectImage?.url; if (!url) return; const link = document.createElement("a"); link.href = url; link.download = "室内设计-二次修改.jpg"; link.click() };
   const download = () => {
     if (!resultUrl) return;
     const link = document.createElement("a");
@@ -615,12 +674,13 @@ function Workbench({ credits, refreshCredits, onSaved }) {
               onChange={setRoom}
               placeholder="请选择空间类型"
             />
-            <ThemePicker value={theme} onChange={setTheme} />
-            <CustomStylePanel onSelect={(reference, prompt) => { setStyleReference(reference); setCustomStylePrompt(prompt) }} />
+            <ThemePicker value={customStyleId ?? theme} styles={styles} onCustom={selectCustomStyle} onAdd={() => setCustomOpen(true)} onChange={(name) => { if (name !== theme) setStyleReference(null); setTheme(name); setCustomStyleId(null); setCustomStylePrompt('') }} />
+            {customOpen && <CustomStylePanel onClose={() => setCustomOpen(false)} onSaved={(style) => { setStyles((items) => [...items, style]); selectCustomStyle(style); setCustomOpen(false) }} />}
+            <label className="input-field"><span>生成提示词（可选）</span><textarea value={userPrompt} onChange={(event) => setUserPrompt(event.target.value)} placeholder="例如：保留落地窗，增加收纳，整体更温暖" rows="3" maxLength="2000" /></label>
           </div>
           <button
             className="primary-button"
-            disabled={["creating", "polling"].includes(status) || !styleReference}
+            disabled={saving || editBusy || Boolean(pendingRevision) || ["creating", "polling"].includes(status) || !styleReference}
             type="button"
             onClick={generate}
           >
@@ -723,7 +783,7 @@ function Workbench({ credits, refreshCredits, onSaved }) {
             <button
               className="secondary-button"
               type="button"
-              disabled={!resultUrl || saving || saved}
+              disabled={!resultUrl || saving || saved || editBusy || Boolean(pendingRevision)}
               onClick={save}
             >
               {saving ? (
@@ -734,8 +794,29 @@ function Workbench({ credits, refreshCredits, onSaved }) {
               {saved ? "已保存" : "保存作品"}
             </button>
           </div>
-          {resultUrl && <div className="refine-area"><div><strong>还想再调整？</strong><small>例如：把方桌换成圆桌。未使用区域蒙版时，附近物体可能同步变化。</small></div><button className="secondary-button" type="button" onClick={() => setEditOpen(true)}><RefreshCw size={16} />二次修改</button></div>}
-          {editOpen && <div className="backdrop"><section className="dialog refine-dialog" role="dialog" aria-modal="true" aria-labelledby="refine-title"><header className="dialog-header"><div><span className="kicker">新一次生成 · 1 次额度</span><h2 id="refine-title">描述你想改的地方</h2></div><button className="icon-button" type="button" onClick={() => { setEditOpen(false); setCandidateTask(null) }} aria-label="关闭二次修改"><X size={19} /></button></header><textarea value={editPrompt} onChange={(event) => setEditPrompt(event.target.value)} placeholder="例如：把客厅里的方桌换成一张圆桌，保持其他布置不变" rows="4" /><p className="form-help">成功生成才扣 1 次额度，失败自动释放。没有涂抹范围时，AI 可能影响相邻区域。</p><button className="primary-button" type="button" disabled={editBusy || !editPrompt.trim()} onClick={refine}>{editBusy ? <LoaderCircle className="spin" /> : <WandSparkles size={17} />}{editBusy ? "生成中…" : "生成修改候选"}</button>{candidateTask?.result?.effectImage?.url && <div className="candidate-preview"><img src={candidateTask.result.effectImage.url} alt="二次修改候选图" /><div className="dialog-actions"><button className="primary-button compact" type="button" onClick={() => { setTask(candidateTask); setEditOpen(false); setCandidateTask(null); setEditPrompt(""); refreshCredits() }}>覆盖当前效果</button><button className="secondary-button" type="button" onClick={downloadCandidate}>下载候选图</button><button className="text-button" type="button" onClick={() => { setEditOpen(false); setCandidateTask(null) }}>关闭且不保存</button></div></div>}</section></div>}
+          {resultUrl && <div className="refine-area">
+            <div><strong>继续完善当前设计</strong><small>可连续修改，不限次数。每次成功消耗 1 次额度；回退、下载不扣点。</small></div>
+            <div className="dialog-actions">
+              <button className="secondary-button" type="button" disabled={saving || editBusy || Boolean(pendingRevision) || !task.parentTaskId || !history.some((item) => item.id === task.parentTaskId)} onClick={() => { setTask(history.find((item) => item.id === task.parentTaskId)); setSaved(false) }}>回退上一版</button>
+              <button className="secondary-button" type="button" disabled={saving || editBusy || ['creating','polling'].includes(status)} onClick={() => setEditOpen(true)}><RefreshCw size={16} />{pendingRevision ? '查询修改结果' : '继续修改'}</button>
+            </div>
+          </div>}
+          {resultUrl && history.length > 0 && <section className="revision-history" aria-label="暂存版本"><p>本次暂存版本 · 切换后以该版本继续修改；刷新或离开工作台将清空此列表，请先保存满意版本。</p><div>{history.map((version, index) => <button key={version.id} type="button" aria-pressed={version.id === task.id} disabled={editBusy || Boolean(pendingRevision) || ['creating','polling'].includes(status)} onClick={() => { setTask(version); setSaved(false) }}><img src={version.result.effectImage.url} alt="" />{index === 0 ? '首次效果' : `版本 ${index + 1}`}</button>)}</div></section>}
+          {editOpen && <div className="backdrop">
+            <section className="dialog refine-dialog" role="dialog" aria-modal="true" aria-labelledby="refine-title">
+              <header className="dialog-header">
+                <div><span className="kicker">基于当前版本 · 成功扣 1 次</span><h2 id="refine-title">描述你想改的地方</h2></div>
+                <button className="icon-button" type="button" disabled={editBusy} onClick={() => setEditOpen(false)} aria-label="关闭修改窗口"><X size={19} /></button>
+              </header>
+              <textarea value={editPrompt} disabled={editBusy || Boolean(pendingRevision)} maxLength="2000" onChange={(event) => setEditPrompt(event.target.value)} placeholder="例如：把方桌换成圆桌，保持其他布置不变" rows="4" />
+              <p className="form-help">生成通常需要 1–2 分钟。成功后自动显示新图，上一版暂存，可回退。未指定区域蒙版时，附近细节可能变化。</p>
+              <Notice tone={notice?.tone}>{notice?.text}</Notice>
+              <button className="primary-button" type="button" disabled={editBusy || (!pendingRevision && !editPrompt.trim())} onClick={refine}>
+                {editBusy ? <LoaderCircle className="spin" /> : <WandSparkles size={17} />}
+                {editBusy ? '正在修改，请稍候…' : pendingRevision ? '重试查询（不重复生成）' : '生成修改'}
+              </button>
+            </section>
+          </div>}
         </section>
       </div>
     </div>

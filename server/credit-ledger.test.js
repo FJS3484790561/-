@@ -6,7 +6,7 @@ import { CreditLedgerService, MemoryCreditStore } from './credit-ledger.js'
 async function fixture() {
   let now = Date.UTC(2026, 0, 1)
   const authService = new AuthService({ store: new MemoryAuthStore(() => now), clock: () => now })
-  await authService.register({ email: 'user@example.com', password: 'correct-horse' })
+  await authService.provisionUser({ email: 'user@example.com', password: 'correct-horse' })
   const login = await authService.login({ email: 'user@example.com', password: 'correct-horse' })
   const ledger = new CreditLedgerService({ authService, store: new MemoryCreditStore(), clock: () => now })
   return { authService, token: login.sessionToken, userId: login.user.id, ledger, now: () => now, advance: (ms) => { now += ms } }
