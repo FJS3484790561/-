@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { createSqliteStores } from './persistence/sqlite-stores.js'
 import { appApiConstants } from './app-api.js'
 import { createAppRuntime } from './app-runtime.js'
 import { createAppHttpServer } from './http-server.js'
@@ -41,6 +45,36 @@ test('serves health and safe not found responses over a real HTTP server', async
   } finally {
     await new Promise((resolve) => server.close(resolve))
   }
+})
+
+test('overview route enforces sessions, admin permission and returns live SQLite aggregates without caching', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'overview-api-'))
+  const stores = createSqliteStores({ filename: join(directory, 'app.sqlite') })
+  const runtime = createAppRuntime({ stores })
+  try {
+    assert.equal((await call(runtime.api, '/api/admin/overview')).response.status, 401)
+    await runtime.provisionAdmin({ password: 'correct-horse' })
+    const adminCookie = await login(runtime.api, 'admin@example.com')
+    const userCookie = await registerAndLogin(runtime.api, 'overview-user@example.com')
+    assert.equal((await call(runtime.api, '/api/admin/overview', { cookie: userCookie })).response.status, 403)
+    const overview = await call(runtime.api, '/api/admin/overview', { cookie: adminCookie })
+    assert.equal(overview.response.status, 200)
+    assert.equal(overview.response.headers.get('cache-control'), 'no-store')
+    assert.equal(overview.data.overview.users.total, 2)
+    await call(runtime.api, '/api/admin/redemption-codes', { method: 'POST', cookie: adminCookie, body: { credits: 4, maxRedemptions: 3 } })
+    assert.deepEqual((await call(runtime.api, '/api/admin/overview', { cookie: adminCookie })).data.overview.redemptionCodes, { total: 1, redemptions: 0, remaining: 3 })
+    await call(runtime.api, '/api/auth/logout', { method: 'POST', cookie: adminCookie, body: {} })
+    assert.equal((await call(runtime.api, '/api/admin/overview', { cookie: adminCookie })).response.status, 401)
+  } finally { stores.close(); rmSync(directory, { recursive: true, force: true }) }
+})
+
+test('overview route reports missing persistence as 503, not zero statistics', async () => {
+  const runtime = createAppRuntime()
+  await runtime.provisionAdmin({ password: 'correct-horse' })
+  const cookie = await login(runtime.api, 'admin@example.com')
+  const result = await call(runtime.api, '/api/admin/overview', { cookie })
+  assert.equal(result.response.status, 503)
+  assert.deepEqual(result.data, { ok: false, code: 'OVERVIEW_UNAVAILABLE' })
 })
 
 test('uses HttpOnly session cookies and supports password reset without token disclosure', async () => {

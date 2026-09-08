@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Activity, AlertTriangle, CheckCircle2, Copy, KeyRound, LogOut, Pencil, Plus, RefreshCw, ServerCog, ShieldCheck, Ticket, X } from 'lucide-react'
+import { Activity, AlertTriangle, BarChart3, CheckCircle2, Copy, Database, KeyRound, LogOut, Pencil, Plus, RefreshCw, ServerCog, ShieldCheck, Ticket, Users, X } from 'lucide-react'
 import { adminApi, ApiError } from './admin-api'
 
 const blank = { name: '', endpoint: '', model: '' }
@@ -10,6 +10,9 @@ const copy = {
   NOT_FOUND: '该 Provider 已不存在，请刷新列表。',
   INTERNAL_ERROR: '服务暂时不可用，请稍后重试。',
   INVALID_RESPONSE: '服务返回了无法识别的响应。',
+  OVERVIEW_UNAVAILABLE: '当前环境未连接统计数据库，暂时无法读取总体数据。',
+  UNAUTHORIZED: '登录状态已失效，请重新登录。',
+  FORBIDDEN: '当前账号没有管理员权限。',
   PROVIDER_TEST_FAILED: 'Provider 测试失败，请检查接口、模型和 API Key。',
   INVALID_PROVIDER_RESPONSE: 'Provider 已响应，但没有返回有效图片。',
   PROVIDER_TEST_UNAVAILABLE: 'Provider 测试服务暂不可用。',
@@ -19,6 +22,46 @@ const copy = {
 }
 const messageFor = (error, fallback = '操作未完成，请稍后重试。') => error instanceof TypeError ? '无法连接本地服务，请确认 API 已启动。' : copy[error?.code] || fallback
 const formatTime = (value) => new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
+const formatBytes = (bytes) => bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`
+function Overview({ providers, redemptionCodes }) {
+  const [state, setState] = useState({ data: null, error: '' })
+  const [revision, setRevision] = useState(0)
+  const loading = state.revision !== revision || state.providers !== providers || state.redemptionCodes !== redemptionCodes
+  const load = () => setRevision((value) => value + 1)
+  useEffect(() => {
+    let active = true
+    adminApi.getOverview()
+      .then((result) => { if (active) setState({ revision, providers, redemptionCodes, data: result.overview, error: '' }) })
+      .catch((error) => { if (active) setState({ revision, providers, redemptionCodes, data: null, error: messageFor(error, '总览读取失败，请重试。') }) })
+    return () => { active = false }
+  }, [revision, providers, redemptionCodes])
+  const data = state.data
+  return <section className="provider-section overview-section" aria-label="总体数据" aria-busy={loading}>
+    <header className="section-heading">
+      <div><h2><BarChart3 size={19} />总体数据</h2><p>只读统计，不包含密钥、密码、用户资料或图片内容。</p></div>
+      <button className="icon-button" onClick={load} disabled={loading} aria-label="刷新总体数据" title="刷新">
+        <RefreshCw className={loading ? 'spin' : ''} size={18} />
+      </button>
+    </header>
+    {loading && <div className="loading-row" role="status">正在读取统计</div>}
+    {!loading && state.error && <Alert kind="error" action={<button onClick={load}>重试</button>}>{state.error}</Alert>}
+    {data && <>
+      <div className="overview-grid">
+        <Stat icon={<Users size={17} />} label="用户" value={data.users.total} note={`今日 +${data.users.today} · 近 7 日 +${data.users.last7Days}`} />
+        <Stat label="生成任务" value={data.generations.total} note={`成功 ${data.generations.succeeded} · 失败 ${data.generations.failed} · 排队/运行 ${data.generations.running}`} />
+        <Stat label="生成成功率" value={data.generations.successRate == null ? '—' : `${data.generations.successRate}%`} note={`今日 ${data.generations.today} · 近 7 日 ${data.generations.last7Days}`} />
+        <Stat icon={<Database size={17} />} label="作品" value={data.works.total} note={`今日 ${data.works.today} · 近 7 日 ${data.works.last7Days}`} />
+        <Stat label="可用点数" value={data.credits.available} note={`累计发放 ${data.credits.granted} · 预留 ${data.credits.reserved} · 已消耗 ${data.credits.consumed}`} />
+        <Stat label="兑换码" value={data.redemptionCodes.total} note={`已兑换 ${data.redemptionCodes.redemptions} · 剩余名额 ${data.redemptionCodes.remaining}`} />
+        <Stat label="Provider" value={data.providers.total} note={`启用 ${data.providers.enabled} · 停用 ${data.providers.disabled}`} />
+        <Stat label="存储对象" value={data.storage.objects} note={`已记录大小 ${formatBytes(data.storage.bytes)}`} />
+      </div>
+      <p className="overview-note">北京时间 · 近 7 日含今天及前 6 个自然日 · 更新于 {formatTime(data.generatedAt)}</p>
+      <p className="overview-note">用户数含管理员；成功率 = 成功 /（成功 + 失败），不计排队和运行中任务。可用点数不含过期和已预留额度。存储仅统计本站记录，不代表整个 COS 桶用量；支付收入未纳入。</p>
+    </>}
+  </section>
+}
+function Stat({ icon, label, value, note }) { return <div className="overview-stat">{icon || <Activity size={17} />}<small>{label}</small><strong>{value}</strong><span>{note}</span></div> }
 
 function Login({ onAuthenticated }) {
   const [busy, setBusy] = useState(false)
@@ -200,6 +243,7 @@ function Console({ user, initialProviders, initialRedemptionCodes, onLogout }) {
     <section className="console-heading"><div><span className="kicker"><Activity size={15} />系统配置</span><h1>运营管理</h1><p>维护图片 Provider、兑换码和用户额度发放。</p></div><button className="primary-button add-button" onClick={() => setDialog({ type: 'form' })}><Plus size={18} />新建 Provider</button></section>
     <section className="summary" aria-label="Provider 概览"><div><small>全部配置</small><strong>{providers.length}</strong></div><div><small>已启用</small><strong>{providers.filter((item) => item.enabled).length}</strong></div><div><small>密钥已配置</small><strong>{providers.filter((item) => item.apiKeyConfigured).length}</strong></div></section>
     <div className="status-region" aria-live="polite">{notice && <Alert kind="success" action={<button onClick={() => setNotice('')} aria-label="关闭成功消息"><X size={15} /></button>}>{notice}</Alert>}{error && <Alert kind="error" action={<button onClick={refresh}>重试</button>}>{error}</Alert>}</div>
+    <Overview providers={providers} redemptionCodes={redemptionCodes} />
     <section className="provider-section">
       <header className="section-heading"><div><h2>连接配置</h2><p>密钥始终以脱敏状态呈现。</p></div><button className="icon-button" onClick={refresh} aria-label="刷新 Provider 列表" title="刷新"><RefreshCw size={18} /></button></header>
       {!providers.length ? <div className="empty-state"><span><ServerCog size={28} /></span><h3>尚未配置 Provider</h3><p>创建第一条连接配置。新配置默认停用。</p><button className="secondary-button" onClick={() => setDialog({ type: 'form' })}><Plus size={17} />新建 Provider</button></div> :

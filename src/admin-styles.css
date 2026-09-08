@@ -59,6 +59,14 @@ label small { min-height: 0; color: #ad5b69; font-weight: 600; }
 .status-region { min-height: 0; margin-bottom: 12px; }
 .provider-section { border-radius: 24px; padding: 22px; }
 .redemption-section { margin-top: 18px; }
+.overview-section { margin-bottom: 18px; }
+.section-heading h2 { display: flex; align-items: center; gap: 8px; }
+.overview-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; padding-top: 17px; }
+.overview-stat { display: grid; grid-template-columns: auto 1fr; gap: 3px 8px; align-items: center; min-height: 100px; padding: 14px; border-radius: 16px; background: rgba(250,243,246,.8); }
+.overview-stat > svg { grid-row: span 2; color: #b24f7d; }
+.overview-stat small { color: #958594; font-size: 11px; font-weight: 700; }
+.overview-stat strong { grid-column: 2; color: #69586b; font-size: 24px; }
+.overview-stat span { grid-column: 1 / -1; color: #a0919e; font-size: 10px; line-height: 1.4; }
 .section-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding-bottom: 17px; border-bottom: 1px solid #eadde4; }
 .section-heading h2, .dialog-header h2 { margin-bottom: 3px; color: #665769; font-size: 18px; }
 .empty-state { display: grid; place-items: center; min-height: 320px; padding: 30px; text-align: center; }
@@ -115,7 +123,10 @@ footer span { display: inline-flex; align-items: center; gap: 5px; }
 .redemption-list article > div strong { color: #5d515d; font-size: 13px; }
 .redemption-list article > div small { margin-top: 4px; color: #a0919e; font-size: 10px; }
 
+.overview-note { color: #756675; font-size: 12px; line-height: 1.7; }
 @media (max-width: 920px) {
+  .overview-stat { min-width: 0; overflow-wrap: anywhere; }
+  .overview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .provider-row { grid-template-columns: 1fr auto; }
   .redemption-form { grid-template-columns: 1fr 1fr; }
   .redemption-form button { grid-column: 1 / -1; }
@@ -124,6 +135,7 @@ footer span { display: inline-flex; align-items: center; gap: 5px; }
   .actions { grid-column: 2; grid-row: 1; }
 }
 @media (max-width: 600px) {
+  .overview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .admin-shell { width: min(100% - 24px, 1260px); padding-top: 12px; }
   .topbar { align-items: flex-start; }
   .brand small, .account > span { display: none; }

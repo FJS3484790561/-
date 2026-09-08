@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import { AdminProviderService, MemoryAdminProviderStore } from './admin-provider-service.js'
+import { AdminOverviewService } from './admin-overview-service.js'
 import { AppApi } from './app-api.js'
 import { AuthService, MemoryAuthStore } from './auth-service.js'
 import { CreditLedgerService, MemoryCreditStore } from './credit-ledger.js'
@@ -256,12 +257,13 @@ export function createAppRuntime({ mailer, paymentProvider = localPaymentProvide
   const redemptionCodeService = new RedemptionCodeService({ authService, creditLedger, store: stores.redemptionCodes ?? new MemoryRedemptionCodeStore(), isAdmin })
   const testProvider = providerTester ?? ((config) => testConfiguredProvider({ ...config, fetchImpl }))
   const adminProviderService = new AdminProviderService({ authService, store: stores.providers ?? new MemoryAdminProviderStore(), encryptionKey, isAdmin, testProvider, logger })
+  const adminOverviewService = new AdminOverviewService({ database: stores.database, authService, isAdmin })
   const providers = new ProviderRegistry({ default: configuredGenerationProvider({ adminProviderService, fallback: generationProvider ?? localGenerationProvider(), fetchImpl, logger }) })
   const generationService = new GenerationService({ authService, store: stores.generations ?? new MemoryGenerationStore(), providers, creditLedger, objectStorage, fetchImpl, logger })
   const paymentService = new PaymentService({ authService, creditLedger, store: stores.payments ?? new MemoryPaymentStore(), provider: paymentProvider })
   const worksService = new WorksService({ authService, store: stores.works ?? new MemoryWorksStore() })
   const styleService = new StyleService({ authService, store: stores.styles ?? new MemoryStyleStore() })
-  const api = new AppApi({ authService, generationService, creditLedger, paymentService, worksService, adminProviderService, redemptionCodeService, styleService, objectStorage, secureCookies, allowedOrigins })
+  const api = new AppApi({ authService, generationService, creditLedger, paymentService, worksService, adminProviderService, redemptionCodeService, adminOverviewService, styleService, objectStorage, secureCookies, allowedOrigins })
   const provisionAdmin = ({ password }) => authService.provisionUser({ email: normalizedAdminEmail, password })
-  return { api, authService, creditLedger, generationService, paymentService, worksService, styleService, adminProviderService, redemptionCodeService, objectStorage, provisionAdmin, close }
+  return { api, authService, creditLedger, generationService, paymentService, worksService, styleService, adminProviderService, adminOverviewService, redemptionCodeService, objectStorage, provisionAdmin, close }
 }

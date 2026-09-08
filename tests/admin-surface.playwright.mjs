@@ -1,6 +1,9 @@
 import { chromium } from 'playwright'
 import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
+import { mkdtempSync, mkdirSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { createServer as createViteServer } from 'vite'
 import { createServer as createHttpServer } from 'node:http'
 
@@ -10,6 +13,9 @@ const providerUrl = 'http://127.0.0.1:8798/v1/images/edits'
 const adminPassword = 'qa-admin-password'
 const userPassword = 'qa-user-password'
 const processes = []
+const fixtureDirectory = mkdtempSync(join(tmpdir(), 'admin-overview-browser-'))
+const screenshotDirectory = resolve('artifacts/admin-overview')
+mkdirSync(screenshotDirectory, { recursive: true })
 
 function start(command, args, env = {}) {
   const child = spawn(command, args, { cwd: process.cwd(), env: { ...globalThis.process.env, ...env }, stdio: 'ignore' })
@@ -35,7 +41,7 @@ const providerServer = createHttpServer((request, response) => {
 })
 await new Promise((resolve) => providerServer.listen(8798, '127.0.0.1', resolve))
 process.env.API_ORIGIN = apiUrl
-start(process.execPath, ['server/start-api.js'], { ADMIN_PASSWORD: adminPassword, API_PORT: '8797', APP_ALLOWED_ORIGINS: 'http://127.0.0.1:4174' })
+start(process.execPath, ['server/start-api.js'], { NODE_ENV: 'development', ADMIN_EMAIL: 'admin@example.com', ADMIN_PASSWORD: adminPassword, APP_DATABASE_PATH: join(fixtureDirectory, 'app.sqlite'), API_PORT: '8797', APP_ALLOWED_ORIGINS: 'http://127.0.0.1:4174' })
 const vite = await createViteServer({ server: { host: '127.0.0.1', port: 4174 } })
 await vite.listen()
 await Promise.all([waitFor(`${apiUrl}/api/health`), waitFor(baseUrl)])
@@ -73,6 +79,28 @@ try {
     await page.getByLabel('密码').fill(adminPassword)
     await page.getByRole('button', { name: '安全登录' }).click()
     await page.getByRole('heading', { name: '运营管理' }).waitFor()
+    const overview = page.getByRole('region', { name: '总体数据' })
+    await overview.locator('.overview-stat').first().waitFor()
+    if (await overview.locator('.overview-stat').count() !== 8) throw new Error('Overview must contain eight cards')
+    if (await overview.locator('.overview-stat').filter({ hasText: /^用户/ }).locator('strong').innerText() !== '2') throw new Error('Overview user count is incorrect')
+    if (viewport.name === 'desktop') {
+      await page.route('**/api/admin/overview', (route) => route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ ok: false, code: 'INTERNAL_ERROR' }) }), { times: 1 })
+      await overview.getByRole('button', { name: '刷新总体数据' }).click()
+      await overview.getByRole('alert').waitFor()
+      await overview.getByRole('button', { name: '重试' }).click()
+      await overview.locator('.overview-stat').first().waitFor()
+      const pending = []
+      await page.route('**/api/admin/overview', (route) => { pending.push(route) }, { times: 1 })
+      await overview.getByRole('button', { name: '刷新总体数据' }).click()
+      await overview.getByText('正在读取统计').waitFor()
+      if (!await overview.getByRole('button', { name: '刷新总体数据' }).isDisabled()) throw new Error('Refresh must be disabled during loading')
+      await page.waitForFunction(() => document.querySelector('.overview-section[aria-busy="true"]') !== null)
+      for (let attempt = 0; !pending.length && attempt < 100; attempt += 1) await new Promise((resolve) => setTimeout(resolve, 20))
+      if (!pending.length) throw new Error('Overview refresh did not reach the API within two seconds')
+      await pending[0].continue()
+      await overview.getByRole('button', { name: '刷新总体数据' }).waitFor()
+      await page.waitForFunction(() => document.querySelector('.overview-section[aria-busy="false"]') !== null)
+    }
     if (viewport.name === 'desktop') await page.getByText('尚未配置 Provider').waitFor()
 
     await page.getByRole('button', { name: '新建 Provider' }).first().click()
@@ -137,6 +165,9 @@ try {
     await page.getByRole('button', { name: '生成兑换码' }).click()
     await page.getByText(/ROOM-[2-9A-HJ-NP-Z]{4}-[2-9A-HJ-NP-Z]{4}-[2-9A-HJ-NP-Z]{4}/).waitFor()
     await page.getByText('8').last().waitFor()
+    const expectedCount = ['desktop', 'mobile', 'minimum-mobile'].indexOf(viewport.name) + 1
+    await page.waitForFunction((count) => [...document.querySelectorAll('.overview-stat')].some((card) => card.querySelector('small')?.textContent === '兑换码' && card.querySelector('strong')?.textContent === String(count)), expectedCount)
+    await page.screenshot({ path: join(screenshotDirectory, `${viewport.name}.png`), fullPage: true })
     const body = await page.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth }))
     const pass = !secretVisible && !keyWasRefilled && body.scrollWidth <= body.clientWidth && focusOutline !== 'none' && consoleErrors.length === 0
     results.push({ check: viewport.name, pass, secretVisible, keyWasRefilled, horizontalOverflow: body.scrollWidth > body.clientWidth, focusVisible: focusOutline !== 'none', consoleErrors })
