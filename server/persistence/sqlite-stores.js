@@ -165,6 +165,7 @@ export function createSqliteStores({ filename } = {}) {
     redemptions: new SqliteJsonMap(database, { table: 'redemption_code_uses', keyColumn: 'redemption_key', extras: { code_id: (value) => value.codeId, user_id: (value) => value.userId } }),
     transaction: runTransaction,
   }
+  const feedback = { feedback: new SqliteJsonMap(database, { table: 'user_feedback', keyColumn: 'feedback_id', extras: { user_id: (value) => value.userId } }), transaction: runTransaction }
   const objects = new SqliteJsonMap(database, { table: 'stored_objects', keyColumn: 'object_key', extras: {
     owner_id: (value) => value.ownerId ?? null,
     mime_type: (value) => value.mimeType,
@@ -172,5 +173,5 @@ export function createSqliteStores({ filename } = {}) {
     created_at: (value) => value.createdAt,
     metadata_json: (value) => encode(value.metadata ?? {}),
   } })
-  return { database, auth, credits, payments, generations, works, providers, styles, redemptionCodes, objects, close: () => database.close() }
+  return { database, auth, credits, payments, generations, works, providers, styles, redemptionCodes, feedback, objects, close: () => database.close() }
 }

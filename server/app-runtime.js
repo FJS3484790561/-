@@ -5,6 +5,7 @@ import { AppApi } from './app-api.js'
 import { AuthService, MemoryAuthStore } from './auth-service.js'
 import { CreditLedgerService, MemoryCreditStore } from './credit-ledger.js'
 import { MemoryRedemptionCodeStore, RedemptionCodeService } from './redemption-code-service.js'
+import { FeedbackService, MemoryFeedbackStore } from './feedback-service.js'
 import { GenerationService, MemoryGenerationStore, ProviderRegistry } from './generation-service.js'
 import { MemoryPaymentStore, PaymentService } from './payment-service.js'
 import { MemoryWorksStore, WorksService } from './works-service.js'
@@ -269,7 +270,8 @@ export function createAppRuntime({ mailer, paymentProvider = localPaymentProvide
   const authService = new AuthService({ store: stores.auth ?? new MemoryAuthStore(), mailer, verificationSecret: encryptionKey, reservedRegistrationEmails: [normalizedAdminEmail] })
   const creditLedger = new CreditLedgerService({ authService, store: stores.credits ?? new MemoryCreditStore() })
   const isAdmin = (user) => user.email === normalizedAdminEmail
-  const redemptionCodeService = new RedemptionCodeService({ authService, creditLedger, store: stores.redemptionCodes ?? new MemoryRedemptionCodeStore(), isAdmin })
+  const redemptionCodeService = new RedemptionCodeService({ authService, creditLedger, store: stores.redemptionCodes ?? new MemoryRedemptionCodeStore(), isAdmin, encryptionKey })
+  const feedbackService = new FeedbackService({ authService, redemptionCodeService, mailer, store: stores.feedback ?? new MemoryFeedbackStore(), isAdmin, logger })
   const testProvider = providerTester ?? ((config) => testConfiguredProvider({ ...config, fetchImpl }))
   const adminProviderService = new AdminProviderService({ authService, store: stores.providers ?? new MemoryAdminProviderStore(), encryptionKey, isAdmin, testProvider, logger })
   const adminOverviewService = new AdminOverviewService({ database: stores.database, authService, isAdmin })
@@ -278,7 +280,7 @@ export function createAppRuntime({ mailer, paymentProvider = localPaymentProvide
   const paymentService = new PaymentService({ authService, creditLedger, store: stores.payments ?? new MemoryPaymentStore(), provider: paymentProvider })
   const worksService = new WorksService({ authService, store: stores.works ?? new MemoryWorksStore() })
   const styleService = new StyleService({ authService, store: stores.styles ?? new MemoryStyleStore() })
-  const api = new AppApi({ authService, generationService, creditLedger, paymentService, worksService, adminProviderService, redemptionCodeService, adminOverviewService, styleService, objectStorage, secureCookies, allowedOrigins })
+  const api = new AppApi({ authService, generationService, creditLedger, paymentService, worksService, adminProviderService, redemptionCodeService, feedbackService, adminOverviewService, styleService, objectStorage, secureCookies, allowedOrigins })
   const provisionAdmin = ({ password }) => authService.provisionUser({ email: normalizedAdminEmail, password })
-  return { api, authService, creditLedger, generationService, paymentService, worksService, styleService, adminProviderService, adminOverviewService, redemptionCodeService, objectStorage, provisionAdmin, close }
+  return { api, authService, creditLedger, generationService, paymentService, worksService, styleService, adminProviderService, adminOverviewService, redemptionCodeService, feedbackService, objectStorage, provisionAdmin, close }
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Activity, AlertTriangle, BarChart3, CheckCircle2, Copy, Database, KeyRound, LogOut, Pencil, Plus, RefreshCw, ServerCog, ShieldCheck, Ticket, Users, X } from 'lucide-react'
+import { Activity, AlertTriangle, BarChart3, Check, CheckCircle2, Copy, Database, KeyRound, LogOut, MessageSquare, Pencil, Plus, RefreshCw, ServerCog, ShieldCheck, Ticket, Trash2, Users, X, XCircle } from 'lucide-react'
 import { adminApi, ApiError } from './admin-api'
 
 const blank = { name: '', endpoint: '', model: '' }
@@ -19,6 +19,10 @@ const copy = {
   INVALID_REDEMPTION_CODE: '兑换码无效。',
   REDEMPTION_CODE_ALREADY_USED: '该用户已经兑换过此码。',
   REDEMPTION_CODE_EXHAUSTED: '兑换人数已达到上限。',
+  REDEMPTION_CODE_EMAIL_MISMATCH: '该兑换码绑定了其他邮箱。',
+  FEEDBACK_ALREADY_ACCEPTED: '这条反馈已经采纳。',
+  FEEDBACK_NOT_REJECTED: '只有标记为不采纳后才能删除反馈。',
+  MAIL_UNAVAILABLE: '邮件发送失败，请检查发信配置后重试。',
 }
 const messageFor = (error, fallback = '操作未完成，请稍后重试。') => error instanceof TypeError ? '无法连接本地服务，请确认 API 已启动。' : copy[error?.code] || fallback
 const formatTime = (value) => new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
@@ -181,7 +185,7 @@ function Audit({ provider, onClose }) {
   </section></div>
 }
 
-function RedemptionCodes({ codes, onCreated }) {
+function RedemptionCodes({ codes, onCreated, onDeleted }) {
   const [credits, setCredits] = useState(5)
   const [maxRedemptions, setMaxRedemptions] = useState(1)
   const [busy, setBusy] = useState(false)
@@ -209,13 +213,43 @@ function RedemptionCodes({ codes, onCreated }) {
       <button className="primary-button" type="submit" disabled={busy}>{busy ? <RefreshCw className="spin" size={17} /> : <Plus size={17} />}{busy ? '生成中' : '生成兑换码'}</button>
     </form>
     {error && <Alert kind="error">{error}</Alert>}
-    {newCode && <div className="new-code" role="status"><div><small>新兑换码（完整内容只显示这一次）</small><code>{newCode}</code></div><button className="secondary-button" type="button" onClick={copyCode}><Copy size={16} />复制</button></div>}
-    {!codes.length ? <div className="empty-mini">还没有生成兑换码</div> : <div className="redemption-list">{codes.map((code) => <article key={code.id}><div><strong>{code.preview}</strong><small>{formatTime(code.createdAt)}</small></div><dl><div><dt>每人点数</dt><dd>{code.credits}</dd></div><div><dt>已兑换</dt><dd>{code.redeemedCount} / {code.maxRedemptions}</dd></div><div><dt>剩余名额</dt><dd>{code.remainingRedemptions}</dd></div></dl></article>)}</div>}
-    <p className="security-note"><ShieldCheck size={16} />数据库只保存兑换码哈希，列表不会再次返回完整兑换码。</p>
+    {newCode && <div className="new-code" role="status"><div><small>新兑换码</small><code>{newCode}</code></div><button className="secondary-button" type="button" onClick={copyCode}><Copy size={16} />复制</button></div>}
+    {!codes.length ? <div className="empty-mini">还没有生成兑换码</div> : <div className="redemption-list">{codes.map((code) => <RedemptionCodeRow key={code.id} code={code} onDeleted={onDeleted} />)}</div>}
+    <p className="security-note"><ShieldCheck size={16} />兑换码由服务器加密保存，仅管理员可查看；已兑换记录删除后仍保留审计痕迹。</p>
   </section>
 }
 
-function Console({ user, initialProviders, initialRedemptionCodes, onLogout }) {
+function RedemptionCodeRow({ code, onDeleted }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  async function remove() {
+    if (!window.confirm('确定删除这条兑换码记录吗？')) return
+    setBusy(true); setError('')
+    try { const result = await adminApi.removeRedemptionCode(code.id); onDeleted(result.redemptionCode ?? code) } catch (reason) { setError(messageFor(reason, '兑换码删除失败，请重试。')) } finally { setBusy(false) }
+  }
+  async function copy() { try { await navigator.clipboard.writeText(code.code ?? '') } catch { setError('复制失败，请手动选择兑换码。') } }
+  return <article className={code.deletedAt ? 'redemption-row is-deleted' : 'redemption-row'}><div className="redemption-code-main"><strong>{code.code ?? code.preview}</strong><small>{formatTime(code.createdAt)}{code.boundEmail ? ` · ${code.boundEmail}` : ''}</small></div><dl><div><dt>每人点数</dt><dd>{code.credits}</dd></div><div><dt>已兑换</dt><dd>{code.redeemedCount} / {code.maxRedemptions}</dd></div><div><dt>剩余名额</dt><dd>{code.remainingRedemptions}</dd></div></dl><div className="redemption-row-actions">{code.deletedAt ? <span className="badge">已删除</span> : <><button className="text-button" type="button" onClick={copy} disabled={!code.code}><Copy size={15} />复制</button><button className="text-button danger-text" type="button" onClick={remove} disabled={busy}><Trash2 size={15} />{busy ? '删除中' : '删除'}</button></>}{error && <small className="inline-error">{error}</small>}</div></article>
+}
+
+function FeedbackList({ initialFeedback }) {
+  const [items, setItems] = useState(initialFeedback)
+  const [busyId, setBusyId] = useState('')
+  const [error, setError] = useState('')
+  const update = (item) => setItems((current) => current.map((entry) => entry.id === item.id ? item : entry))
+  async function decide(item, decision) {
+    const credits = decision === 'accept' ? Number(window.prompt('请输入奖励点数', '10')) : undefined
+    if (decision === 'accept' && (!Number.isSafeInteger(credits) || credits < 1)) return
+    setBusyId(item.id); setError('')
+    try { const result = await adminApi.decideFeedback(item.id, decision, credits); update(result.feedback) } catch (reason) { setError(messageFor(reason, '反馈处理失败，请重试。')) } finally { setBusyId('') }
+  }
+  async function remove(item) {
+    setBusyId(item.id); setError('')
+    try { await adminApi.removeFeedback(item.id); setItems((current) => current.filter((entry) => entry.id !== item.id)) } catch (reason) { setError(messageFor(reason, '反馈删除失败，请重试。')) } finally { setBusyId('') }
+  }
+  return <section className="provider-section feedback-section"><header className="section-heading"><div><h2><MessageSquare size={19} />用户反馈</h2><p>采纳后按你输入的点数发送一次性兑换码；邮件失败可安全重试。</p></div></header>{error && <Alert kind="error">{error}</Alert>}{!items.length ? <div className="empty-mini">暂无用户反馈</div> : <div className="feedback-list">{items.map((item) => <article className={`feedback-row status-${item.status}`} key={item.id}><div className="feedback-content"><div className="feedback-meta"><strong>{item.email}</strong><span className="badge">{item.status === 'pending' ? '待处理' : item.status === 'accepted' ? '已采纳' : '不采纳'}</span><small>{formatTime(item.createdAt)}</small></div><p>{item.message}</p>{item.mailStatus === 'failed' && <small className="inline-error">上次发信失败，可再次点击采纳重试</small>}</div><div className="feedback-actions">{item.status !== 'accepted' && <button className="text-button accept-text" type="button" disabled={busyId === item.id} onClick={() => decide(item, 'accept')}><Check size={16} />采纳</button>}{item.status === 'pending' && <button className="text-button danger-text" type="button" disabled={busyId === item.id} onClick={() => decide(item, 'reject')}><XCircle size={16} />不采纳</button>}{item.status === 'rejected' && <button className="text-button danger-text" type="button" disabled={busyId === item.id} onClick={() => remove(item)}><Trash2 size={16} />删除</button>}</div></article>)}</div>}</section>
+}
+
+function Console({ user, initialProviders, initialRedemptionCodes, initialFeedback, onLogout }) {
   const [providers, setProviders] = useState(initialProviders)
   const [redemptionCodes, setRedemptionCodes] = useState(initialRedemptionCodes)
   const [dialog, setDialog] = useState(null)
@@ -253,7 +287,8 @@ function Console({ user, initialProviders, initialRedemptionCodes, onLogout }) {
         <div className="actions"><button className="text-button" onClick={() => setDialog({ type: 'audit', provider })}><Activity size={16} />审计</button><button className="text-button" onClick={() => setDialog({ type: 'form', provider })}><Pencil size={16} />编辑</button><button className={provider.enabled ? 'toggle enabled' : 'toggle'} aria-pressed={provider.enabled} disabled={busyId === provider.id} onClick={() => toggle(provider)}><span />{busyId === provider.id ? '处理中' : provider.enabled ? '停用' : '启用'}</button></div>
       </article>)}</div>}
     </section>
-    <RedemptionCodes codes={redemptionCodes} onCreated={(code) => setRedemptionCodes((current) => [code, ...current])} />
+    <RedemptionCodes codes={redemptionCodes} onCreated={(code) => setRedemptionCodes((current) => [code, ...current])} onDeleted={(deleted) => setRedemptionCodes((current) => deleted.deletedAt ? current.map((item) => item.id === deleted.id ? deleted : item) : current.filter((item) => item.id !== deleted.id))} />
+    <FeedbackList initialFeedback={initialFeedback} />
     <footer><span><ShieldCheck size={15} />权限、密钥与兑换码由服务器端保护</span><span>敏感值不会回填到页面</span></footer>
     {dialog?.type === 'form' && <ProviderForm provider={dialog.provider} onClose={() => setDialog(null)} onSaved={saved} />}
     {dialog?.type === 'audit' && <Audit provider={dialog.provider} onClose={() => setDialog(null)} />}
@@ -264,8 +299,8 @@ function App() {
   const [state, setState] = useState({ view: 'loading' })
   async function establish(user) {
     try {
-      const [providers, redemptionCodes] = await Promise.all([adminApi.listProviders(), adminApi.listRedemptionCodes()])
-      setState({ view: 'console', user, providers: providers.providers, redemptionCodes: redemptionCodes.redemptionCodes })
+      const [providers, redemptionCodes, feedback] = await Promise.all([adminApi.listProviders(), adminApi.listRedemptionCodes(), adminApi.listFeedback()])
+      setState({ view: 'console', user, providers: providers.providers, redemptionCodes: redemptionCodes.redemptionCodes, feedback: feedback.feedback })
     } catch (error) {
       setState(error.status === 403 ? { view: 'forbidden', user } : { view: 'login' })
     }
@@ -280,7 +315,7 @@ function App() {
   }
   if (state.view === 'loading') return <main className="loading-screen" role="status"><RefreshCw className="spin" size={22} />正在恢复管理员会话</main>
   if (state.view === 'forbidden') return <Forbidden email={state.user.email} onLogout={logout} />
-  if (state.view === 'console') return <Console user={state.user} initialProviders={state.providers} initialRedemptionCodes={state.redemptionCodes} onLogout={logout} />
+  if (state.view === 'console') return <Console user={state.user} initialProviders={state.providers} initialRedemptionCodes={state.redemptionCodes} initialFeedback={state.feedback} onLogout={logout} />
   return <Login onAuthenticated={establish} />
 }
 

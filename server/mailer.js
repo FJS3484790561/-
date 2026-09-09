@@ -16,5 +16,6 @@ export function createMailer(environment = process.env, createTransport = nodema
   return {
     sendRegistrationCode: ({ email, code, expiresMinutes }) => send(email, '室内设计 · 邮箱验证码', `你的注册验证码为：${code}。${expiresMinutes} 分钟内有效，请勿透露给他人。如非本人操作，请忽略此邮件。`),
     sendPasswordReset: ({ email, token }) => send(email, '室内设计 · 重置密码', `请在网站的设置新密码页面填写此重置凭证：${token}\n30 分钟内有效。如非本人操作，请忽略此邮件。`),
+    sendFeedbackReward: ({ email, code, credits }) => send(email, '室内设计 · 反馈奖励', `感谢你的反馈！这条反馈已被采纳，兑换码为：${code}\n兑换后可获得 ${credits} 点额度。请勿将兑换码透露给他人。`),
   }
 }

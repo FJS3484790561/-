@@ -42,4 +42,8 @@ export const adminApi = {
   listAudit: (providerId) => request(`/api/admin/providers/${encodeURIComponent(providerId)}/audit`),
   listRedemptionCodes: () => request('/api/admin/redemption-codes'),
   createRedemptionCode: (values) => request('/api/admin/redemption-codes', { method: 'POST', body: JSON.stringify(values) }),
+  removeRedemptionCode: (codeId) => request(`/api/admin/redemption-codes/${encodeURIComponent(codeId)}`, { method: 'DELETE' }),
+  listFeedback: () => request('/api/admin/feedback'),
+  decideFeedback: (feedbackId, decision, credits) => request(`/api/admin/feedback/${encodeURIComponent(feedbackId)}`, { method: 'POST', body: JSON.stringify({ decision, credits }) }),
+  removeFeedback: (feedbackId) => request(`/api/admin/feedback/${encodeURIComponent(feedbackId)}`, { method: 'DELETE' }),
 }

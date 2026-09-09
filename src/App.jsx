@@ -12,6 +12,7 @@ import {
   LoaderCircle,
   LogOut,
   Menu,
+  MessageSquare,
   Plus,
   RefreshCw,
   ShieldCheck,
@@ -64,11 +65,12 @@ const errorCopy = {
   INVALID_RESPONSE: "服务响应异常，请稍后重试。",
   INVALID_VERIFICATION_CODE: "验证码错误或已过期，请重新获取。",
   CODE_RATE_LIMITED: "验证码发送太频繁，请稍后再试。",
-  MAIL_UNAVAILABLE: "验证码暂时发送失败，请稍后重试。",
+  MAIL_UNAVAILABLE: "邮件服务暂时不可用，请稍后重试。",
   NETWORK_ERROR: "无法连接本地服务，请确认服务已启动。",
   INVALID_REDEMPTION_CODE: "兑换码无效，请检查后重试。",
   REDEMPTION_CODE_ALREADY_USED: "这个兑换码你已经使用过了。",
   REDEMPTION_CODE_EXHAUSTED: "这个兑换码的可兑换人数已用完。",
+  REDEMPTION_CODE_EMAIL_MISMATCH: "这个兑换码只能由指定邮箱兑换。",
 };
 
 function messageFor(error, fallback = "操作未完成，请稍后重试。") {
@@ -1195,11 +1197,30 @@ function AccountPage({ user, onLogout }) {
   );
 }
 
+function FeedbackDialog({ onClose }) {
+  const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState('');
+  const submit = async (event) => {
+    event.preventDefault();
+    if (!message.trim() || busy) return;
+    setBusy(true); setNotice('');
+    try {
+      await api.submitFeedback(message.trim());
+      setNotice('感谢你的反馈，我们会认真查看。');
+      setMessage('');
+    } catch (error) { setNotice(messageFor(error, '反馈提交失败，请稍后重试。')); }
+    finally { setBusy(false); }
+  };
+  return <div className="backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="dialog feedback-dialog" role="dialog" aria-modal="true" aria-labelledby="feedback-title"><header className="dialog-header"><div><span className="kicker">帮助我们变得更好</span><h2 id="feedback-title">意见反馈</h2></div><button className="icon-button" type="button" onClick={onClose} aria-label="关闭反馈窗口"><X size={19} /></button></header><p className="feedback-reward-note">反馈一经采纳，将发送 10 点额度到你的 QQ 邮箱。</p><form className="auth-form" onSubmit={submit}><label className="input-field"><span>告诉我们你的想法</span><textarea value={message} maxLength="2000" rows="6" onChange={(event) => setMessage(event.target.value)} placeholder="可以反馈功能建议、使用问题或改进想法" /></label><Notice tone={notice.startsWith('感谢') ? 'success' : 'error'}>{notice}</Notice><button className="primary-button" type="submit" disabled={busy || !message.trim()}>{busy ? '提交中…' : '提交反馈'}</button></form></section></div>;
+}
+
 function AppShell({ user, onLogout }) {
   const [page, setPage] = useState("studio");
   const [menuOpen, setMenuOpen] = useState(false);
   const [credits, setCredits] = useState(null);
   const [worksRefresh, setWorksRefresh] = useState(0);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const refreshCredits = useCallback(async () => {
     try {
       setCredits(await api.credits());
@@ -1295,6 +1316,8 @@ function AppShell({ user, onLogout }) {
         <CreditsPage credits={credits} refreshCredits={refreshCredits} />
       )}
       {page === "account" && <AccountPage user={user} onLogout={onLogout} />}
+      <button className="feedback-fab" type="button" onClick={() => setFeedbackOpen(true)}><MessageSquare size={17} />反馈</button>
+      {feedbackOpen && <FeedbackDialog onClose={() => setFeedbackOpen(false)} />}
       <footer className="page-footer">
         <span>AI 生成结果仅供设计灵感参考</span>
         <button onClick={() => navigate("account")}>隐私说明 · 帮助中心</button>

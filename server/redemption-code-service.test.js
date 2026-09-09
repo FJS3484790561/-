@@ -3,6 +3,7 @@ import test from 'node:test'
 import { AuthService } from './auth-service.js'
 import { CreditLedgerService } from './credit-ledger.js'
 import { RedemptionCodeService } from './redemption-code-service.js'
+import { randomBytes } from 'node:crypto'
 
 async function fixture() {
   const authService = new AuthService({ reservedRegistrationEmails: ['admin@example.com'] })
@@ -44,4 +45,24 @@ test('rejects invalid limits and invalid codes without granting credits', async 
   assert.equal(data.service.create({ sessionToken: data.adminToken, credits: 1, maxRedemptions: 0 }).code, 'VALIDATION_ERROR')
   assert.equal(data.service.redeem({ sessionToken: data.userToken, code: 'wrong' }).code, 'INVALID_REDEMPTION_CODE')
   assert.equal(data.creditLedger.getBalanceForUser({ userId: data.userId }).available, 3)
+})
+
+test('stores an encrypted full code for repeat administrator viewing and safely removes it', async () => {
+  const data = await fixture()
+  const encrypted = new RedemptionCodeService({ authService: data.service.authService, creditLedger: data.creditLedger, isAdmin: (account) => account.id === data.service.authService.getSession(data.adminToken).id, encryptionKey: randomBytes(32), codeGenerator: () => 'ROOM-3456-789A-BCDE' })
+  const created = encrypted.create({ sessionToken: data.adminToken, credits: 4, maxRedemptions: 2 })
+  assert.equal(encrypted.list({ sessionToken: data.adminToken }).redemptionCodes[0].code, created.code)
+  assert.equal(encrypted.remove({ sessionToken: data.adminToken, codeId: created.redemptionCode.id }).deleted, true)
+  assert.equal(encrypted.list({ sessionToken: data.adminToken }).redemptionCodes.length, 0)
+})
+
+test('soft deletes redeemed codes so quota history remains visible', async () => {
+  const data = await fixture()
+  const encrypted = new RedemptionCodeService({ authService: data.service.authService, creditLedger: data.creditLedger, isAdmin: (account) => account.id === data.service.authService.getSession(data.adminToken).id, encryptionKey: randomBytes(32), codeGenerator: () => 'ROOM-3456-789A-BCDE' })
+  const created = encrypted.create({ sessionToken: data.adminToken, credits: 4, maxRedemptions: 1 })
+  assert.equal(encrypted.redeem({ sessionToken: data.userToken, code: created.code }).creditsAdded, 4)
+  const removed = encrypted.remove({ sessionToken: data.adminToken, codeId: created.redemptionCode.id })
+  assert.equal(removed.redemptionCode.deletedAt > 0, true)
+  assert.equal(encrypted.list({ sessionToken: data.adminToken }).redemptionCodes[0].code, created.code)
+  assert.equal(encrypted.redeem({ sessionToken: data.otherToken, code: created.code }).code, 'INVALID_REDEMPTION_CODE')
 })

@@ -25,6 +25,9 @@ const statusByCode = {
   OVERVIEW_UNAVAILABLE: 503,
   REDEMPTION_CODE_ALREADY_USED: 409,
   REDEMPTION_CODE_EXHAUSTED: 409,
+  REDEMPTION_CODE_EMAIL_MISMATCH: 409,
+  FEEDBACK_ALREADY_ACCEPTED: 409,
+  FEEDBACK_NOT_REJECTED: 409,
 }
 
 function json(data, status = 200, headers = {}) {
@@ -87,7 +90,7 @@ function decodeImage(image) {
 }
 
 export class AppApi {
-  constructor({ authService, generationService, creditLedger, paymentService, worksService, adminProviderService, redemptionCodeService, adminOverviewService = null, styleService, objectStorage = null, maxJsonBytes = DEFAULT_MAX_JSON_BYTES, secureCookies = false, allowedOrigins = [] } = {}) {
+  constructor({ authService, generationService, creditLedger, paymentService, worksService, adminProviderService, redemptionCodeService, feedbackService = null, adminOverviewService = null, styleService, objectStorage = null, maxJsonBytes = DEFAULT_MAX_JSON_BYTES, secureCookies = false, allowedOrigins = [] } = {}) {
     if (!authService || !generationService || !creditLedger || !paymentService || !worksService || !adminProviderService || !redemptionCodeService) throw new Error('all application services are required')
     this.authService = authService
     this.generationService = generationService
@@ -96,6 +99,7 @@ export class AppApi {
     this.worksService = worksService
     this.adminProviderService = adminProviderService
     this.redemptionCodeService = redemptionCodeService
+    this.feedbackService = feedbackService
     this.adminOverviewService = adminOverviewService
     this.styleService = styleService
     this.objectStorage = objectStorage
@@ -180,6 +184,7 @@ export class AppApi {
 
     if (method === 'GET' && pathname === '/api/credits') return safeResult(this.creditLedger.getBalance({ sessionToken }))
     if (method === 'POST' && pathname === '/api/redemption-codes/redeem') return withJsonBody((body) => safeResult(this.redemptionCodeService.redeem({ sessionToken, code: body.code })))
+    if (method === 'POST' && pathname === '/api/feedback' && this.feedbackService) return withJsonBody((body) => safeResult(this.feedbackService.create({ sessionToken, message: body.message }), 201))
     if (method === 'POST' && pathname === '/api/orders') return withJsonBody((body) => safeResult(this.paymentService.createOrder({ sessionToken, amountYuan: body.amountYuan }), 201))
     const orderMatch = pathname.match(/^\/api\/orders\/([^/]+)$/u)
     if (method === 'GET' && orderMatch) return safeResult(this.paymentService.getOrder({ sessionToken, orderId: decodeURIComponent(orderMatch[1]) }))
@@ -196,6 +201,12 @@ export class AppApi {
     if (method === 'GET' && pathname === '/api/admin/overview' && this.adminOverviewService) return safeResult(this.adminOverviewService.get({ sessionToken }))
     if (method === 'GET' && pathname === '/api/admin/redemption-codes') return safeResult(this.redemptionCodeService.list({ sessionToken }))
     if (method === 'POST' && pathname === '/api/admin/redemption-codes') return withJsonBody((body) => safeResult(this.redemptionCodeService.create({ sessionToken, credits: body.credits, maxRedemptions: body.maxRedemptions }), 201))
+    const redemptionCodeMatch = pathname.match(/^\/api\/admin\/redemption-codes\/([^/]+)$/u)
+    if (method === 'DELETE' && redemptionCodeMatch) return safeResult(this.redemptionCodeService.remove({ sessionToken, codeId: decodeURIComponent(redemptionCodeMatch[1]) }))
+    if (method === 'GET' && pathname === '/api/admin/feedback' && this.feedbackService) return safeResult(this.feedbackService.list({ sessionToken }))
+    const feedbackMatch = pathname.match(/^\/api\/admin\/feedback\/([^/]+)$/u)
+    if (method === 'POST' && feedbackMatch && this.feedbackService) return withJsonBody(async (body) => safeResult(await this.feedbackService.decide({ sessionToken, feedbackId: decodeURIComponent(feedbackMatch[1]), decision: body.decision, credits: body.credits })))
+    if (method === 'DELETE' && feedbackMatch && this.feedbackService) return safeResult(this.feedbackService.remove({ sessionToken, feedbackId: decodeURIComponent(feedbackMatch[1]) }))
     if (method === 'POST' && pathname === '/api/admin/providers') return withJsonBody(async (body) => safeResult(await this.adminProviderService.create({ ...body, sessionToken }), 201))
     const auditMatch = pathname.match(/^\/api\/admin\/providers\/([^/]+)\/audit$/u)
     if (method === 'GET' && auditMatch) return safeResult(this.adminProviderService.listAudit({ sessionToken, providerId: decodeURIComponent(auditMatch[1]) }))

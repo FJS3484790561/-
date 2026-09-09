@@ -119,7 +119,9 @@ test('persists accounts, sessions, credits, orders, generations, works, provider
   assert.equal(runtime.generationService.getGeneration({ sessionToken: userLogin.sessionToken, taskId: generation.task.id }).task.status, 'succeeded')
   assert.equal(runtime.worksService.get({ sessionToken: userLogin.sessionToken, workId: work.work.id }).work.id, work.work.id)
   assert.equal(runtime.adminProviderService.readSecretForProvider({ providerId: provider.provider.id }).apiKey, 'test-key')
-  assert.equal(runtime.redemptionCodeService.list({ sessionToken: adminLogin.sessionToken }).redemptionCodes[0].redeemedCount, 1)
+  const reopenedCode = runtime.redemptionCodeService.list({ sessionToken: adminLogin.sessionToken }).redemptionCodes[0]
+  assert.equal(reopenedCode.redeemedCount, 1)
+  assert.equal(reopenedCode.code, redemptionCode.code)
   assert.equal(runtime.redemptionCodeService.redeem({ sessionToken: userLogin.sessionToken, code: redemptionCode.code }).code, 'REDEMPTION_CODE_ALREADY_USED')
   runtime.close()
 })
@@ -311,7 +313,7 @@ test('reapplying migrations is idempotent and preserves the credit journal', asy
   runtime.close()
   for (let attempt = 0; attempt < 2; attempt += 1) {
     stores = createSqliteStores({ filename })
-    assert.deepEqual(stores.database.prepare('SELECT version FROM schema_migrations ORDER BY version').all().map((row) => row.version), [1, 2, 3, 4, 5])
+    assert.deepEqual(stores.database.prepare('SELECT version FROM schema_migrations ORDER BY version').all().map((row) => row.version), [1, 2, 3, 4, 5, 6])
     assert.equal(stores.database.prepare('SELECT COUNT(*) AS count FROM credit_operations').get().count, 1)
     assert.equal(verifySqliteDatabase(stores.database).ok, true)
     stores.close()
@@ -334,7 +336,7 @@ test('upgrades a populated v1 credit database and backfills its journal', async 
   v1.close()
 
   const upgraded = openSqliteDatabase({ filename })
-  assert.deepEqual(upgraded.prepare('SELECT version FROM schema_migrations ORDER BY version').all().map((row) => row.version), [1, 2, 3, 4, 5])
+  assert.deepEqual(upgraded.prepare('SELECT version FROM schema_migrations ORDER BY version').all().map((row) => row.version), [1, 2, 3, 4, 5, 6])
   assert.deepEqual(upgraded.prepare('SELECT operation_type FROM credit_operations ORDER BY occurred_at').all().map((row) => row.operation_type), ['grant', 'reserve', 'settle'])
   assert.equal(upgraded.prepare('SELECT COUNT(*) AS count FROM credit_reservation_operations').get().count, 1)
   assert.equal(verifySqliteDatabase(upgraded).ok, true)

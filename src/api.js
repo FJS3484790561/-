@@ -43,6 +43,7 @@ export const api = {
   styles: () => request('/api/styles'),
   createStyle: (payload) => post('/api/styles', payload),
   saveWork: (payload) => post('/api/works', payload),
+  submitFeedback: (message) => post('/api/feedback', { message }),
   createOrder: (amountYuan) => post('/api/orders', { amountYuan }),
   order: (id) => request(`/api/orders/${encodeURIComponent(id)}`),
 }
