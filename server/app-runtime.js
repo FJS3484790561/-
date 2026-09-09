@@ -21,8 +21,9 @@ function localGenerationProvider() {
   return { generate: async ({ image }) => ({ effectImage: { url: `data:${image.type};base64,${Buffer.from(image.data).toString('base64')}`, mimeType: image.type } }) }
 }
 
-export const GENERATION_TIMEOUT_MS = 90_000
+export const GENERATION_TIMEOUT_MS = 150_000
 const PROVIDER_TEST_TIMEOUT_MS = 60_000
+const DUOYUANX_DUAL_REFERENCE_PIXELS = 704_512
 
 const STYLE_DIRECTIONS = {
   中古风: 'Mid-century vintage design: warm walnut and teak, cream walls, caramel leather, sculptural wood furniture, restrained brass and period lighting; rich but coordinated retro textures.',
@@ -72,10 +73,12 @@ export function generationPrompt(params = {}) {
   ].filter(Boolean).join(' ')
 }
 
-export function generationSizeForImage(image) {
-  if (!Number.isFinite(image?.width) || !Number.isFinite(image?.height) || image.width <= 0 || image.height <= 0) return '1024x1024'
+export function generationSizeForImage(image, targetPixels = 1024 * 1024) {
+  if (!Number.isFinite(image?.width) || !Number.isFinite(image?.height) || image.width <= 0 || image.height <= 0) {
+    const side = Math.max(16, Math.round(Math.sqrt(targetPixels) / 16) * 16)
+    return `${side}x${side}`
+  }
   const ratio = Math.min(3, Math.max(1 / 3, image.width / image.height))
-  const targetPixels = 1024 * 1024
   const width = Math.max(16, Math.round(Math.sqrt(targetPixels * ratio) / 16) * 16)
   const height = Math.max(16, Math.round(Math.sqrt(targetPixels / ratio) / 16) * 16)
   return `${width}x${height}`
@@ -128,8 +131,10 @@ async function upstreamFailure(response) {
 
 function imageProviderRequest({ endpoint, model, image, styleImage, prompt, apiKey, traceId }) {
   const headers = { accept: 'application/json', authorization: `Bearer ${apiKey}`, 'x-request-id': traceId }
-  const size = generationSizeForImage(image)
-  if (usesJsonReferenceImage(endpoint)) {
+  const jsonReferenceImage = usesJsonReferenceImage(endpoint)
+  const targetPixels = jsonReferenceImage && styleImage ? DUOYUANX_DUAL_REFERENCE_PIXELS : 1024 * 1024
+  const size = generationSizeForImage(image, targetPixels)
+  if (jsonReferenceImage) {
     headers['content-type'] = 'application/json'
     return {
       headers,

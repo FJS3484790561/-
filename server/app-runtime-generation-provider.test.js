@@ -15,8 +15,8 @@ const config = {
 const params = { room: '客厅', theme: '现代简约', scale: '均衡', preferences: { layout: true, light: true } }
 
 test('production generation allows provider latency with orchestration headroom', () => {
-  assert.equal(GENERATION_TIMEOUT_MS, 90_000)
-  assert.equal(DEFAULT_PROVIDER_TIMEOUT_MS, 110_000)
+  assert.equal(GENERATION_TIMEOUT_MS, 150_000)
+  assert.equal(DEFAULT_PROVIDER_TIMEOUT_MS, 180_000)
   assert.ok(DEFAULT_PROVIDER_TIMEOUT_MS > GENERATION_TIMEOUT_MS)
 })
 
@@ -137,6 +137,23 @@ test('requests a landscape result for a landscape reference image', async () => 
   }, 100, duoyuanConfig)
   await data.provider.generate({ image: { type: 'image/png', width: 1600, height: 900, data: Buffer.from('private-original') }, params, traceId: 'generation_landscape' })
   assert.equal(JSON.parse(request.body).size, '1360x768')
+})
+
+test('reduces only duoyuanx dual-reference output pixels while preserving source orientation', async () => {
+  let request
+  const duoyuanConfig = { ok: true, provider: { ...config.provider, name: 'duoyuanx', endpoint: 'https://duoyuanx.com/v1/images/generations' } }
+  const data = fixture(async (_url, options) => {
+    request = options
+    return new Response(JSON.stringify({ data: [{ url: 'https://images.example.test/result.png' }] }), { status: 200 })
+  }, 100, duoyuanConfig)
+  await data.provider.generate({
+    image: { type: 'image/jpeg', width: 960, height: 640, data: Buffer.from('private-original') },
+    params: { ...params, styleReference: { type: 'image/png', data: Buffer.from('private-style') } },
+    traceId: 'generation_duoyuan_dual_reference',
+  })
+  const body = JSON.parse(request.body)
+  assert.equal(body.size, '1024x688')
+  assert.equal(body.image.length, 2)
 })
 
 test('supports base64 Images API output without logging image content', async () => {

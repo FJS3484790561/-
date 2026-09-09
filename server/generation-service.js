@@ -4,7 +4,7 @@ import { request as httpsRequest } from 'node:https'
 import { isIP } from 'node:net'
 
 const DEFAULT_MAX_IMAGE_BYTES = 10 * 1024 * 1024
-export const DEFAULT_PROVIDER_TIMEOUT_MS = 110_000
+export const DEFAULT_PROVIDER_TIMEOUT_MS = 180_000
 const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png'])
 const ALLOWED_ROOMS = new Set(['客厅', '卧室', '餐厅', '厨房', '书房'])
 const ALLOWED_THEMES = new Set(['现代简约', '北欧', '日式', '奶油风', '原木风', '轻奢', '中古风', '侘寂风', '自定义'])
