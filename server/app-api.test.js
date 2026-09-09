@@ -47,6 +47,23 @@ test('serves health and safe not found responses over a real HTTP server', async
   }
 })
 
+test('serves protected immutable objects so saved works stay fast across days', async () => {
+  const bytes = Buffer.from('cached-image')
+  let ownerId
+  const runtime = createAppRuntime({
+    objectStorage: {
+      metadataFor: (key) => key === 'users/user/generations/generation/result.jpg' ? { key, ownerId, mimeType: 'image/jpeg', sizeBytes: bytes.length } : null,
+      get: async () => ({ body: bytes }),
+    },
+  })
+  const cookie = await registerAndLogin(runtime.api, 'cached@example.com')
+  ownerId = runtime.authService.getSession(decodeURIComponent(cookie.split('=')[1])).id
+  const response = await runtime.api.handle(new Request('http://app.local/api/objects/users%2Fuser%2Fgenerations%2Fgeneration%2Fresult.jpg', { headers: { cookie } }))
+  assert.equal(response.status, 200)
+  assert.equal(response.headers.get('cache-control'), 'private, max-age=31536000, immutable')
+  assert.deepEqual(Buffer.from(await response.arrayBuffer()), bytes)
+})
+
 test('overview route enforces sessions, admin permission and returns live SQLite aggregates without caching', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'overview-api-'))
   const stores = createSqliteStores({ filename: join(directory, 'app.sqlite') })

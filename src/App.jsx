@@ -439,6 +439,19 @@ function Workbench({ credits, refreshCredits, onSaved }) {
   const inputRef = useRef(null);
   const pollAbortRef = useRef(null);
   useEffect(() => () => pollAbortRef.current?.abort(), []);
+  useEffect(() => {
+    if (!editOpen) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape' && !editBusy) setEditOpen(false);
+    };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [editOpen, editBusy]);
   useEffect(() => { let active = true; api.styles().then((result) => { if (active) setStyles(result.styles ?? []) }).catch(() => { if (active) setNotice({ tone: 'error', text: '自定义风格加载失败，请刷新后重试。' }) }); return () => { active = false } }, []);
   useEffect(() => {
     if (theme === '自定义') return undefined;
@@ -804,13 +817,13 @@ function Workbench({ credits, refreshCredits, onSaved }) {
             </div>
           </div>}
           {resultUrl && history.length > 0 && <section className="revision-history" aria-label="暂存版本"><p>本次暂存版本 · 切换后以该版本继续修改；刷新或离开工作台将清空此列表，请先保存满意版本。</p><div>{history.map((version, index) => <button key={version.id} type="button" aria-pressed={version.id === task.id} disabled={editBusy || Boolean(pendingRevision) || ['creating','polling'].includes(status)} onClick={() => { setTask(version); setSaved(false) }}><img src={version.result.effectImage.url} alt="" />{index === 0 ? '首次效果' : `版本 ${index + 1}`}</button>)}</div></section>}
-          {editOpen && <div className="backdrop">
+          {editOpen && <div className="backdrop" onMouseDown={(event) => event.target === event.currentTarget && !editBusy && setEditOpen(false)}>
             <section className="dialog refine-dialog" role="dialog" aria-modal="true" aria-labelledby="refine-title">
               <header className="dialog-header">
                 <div><span className="kicker">基于当前版本 · 成功扣 1 次</span><h2 id="refine-title">描述你想改的地方</h2></div>
                 <button className="icon-button" type="button" disabled={editBusy} onClick={() => setEditOpen(false)} aria-label="关闭修改窗口"><X size={19} /></button>
               </header>
-              <textarea value={editPrompt} disabled={editBusy || Boolean(pendingRevision)} maxLength="2000" onChange={(event) => setEditPrompt(event.target.value)} placeholder="例如：把方桌换成圆桌，保持其他布置不变" rows="4" />
+              <textarea autoFocus value={editPrompt} disabled={editBusy || Boolean(pendingRevision)} maxLength="2000" onChange={(event) => setEditPrompt(event.target.value)} placeholder="例如：把方桌换成圆桌，保持其他布置不变" rows="4" />
               <p className="form-help">生成通常需要 1–2 分钟。成功后自动显示新图，上一版暂存，可回退。未指定区域蒙版时，附近细节可能变化。</p>
               <Notice tone={notice?.tone}>{notice?.text}</Notice>
               <button className="primary-button" type="button" disabled={editBusy || (!pendingRevision && !editPrompt.trim())} onClick={refine}>
@@ -889,11 +902,11 @@ function WorksPage({ refreshKey }) {
         <div className="work-detail clay-surface">
           <div className="image-grid">
             <figure>
-              <img src={selected.original.url} alt="作品原始照片" />
+              <img src={selected.original.url} alt="作品原始照片" loading="eager" decoding="async" />
               <figcaption>生成之前</figcaption>
             </figure>
             <figure>
-              <img src={selected.effectImage.url} alt="作品设计效果" />
+              <img src={selected.effectImage.url} alt="作品设计效果" loading="eager" decoding="async" />
               <figcaption>生成之后</figcaption>
             </figure>
           </div>
@@ -952,7 +965,7 @@ function WorksPage({ refreshKey }) {
               disabled={detailLoading}
               onClick={() => openWork(work.id)}
             >
-              <img src={work.effectImage.url} alt="" />
+              <img src={work.effectImage.url} alt="" loading="lazy" decoding="async" />
               <span>
                 <strong>
                   {work.params.room} · {work.params.theme}
@@ -1201,6 +1214,16 @@ function FeedbackDialog({ onClose }) {
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
+  useEffect(() => {
+    const onKeyDown = (event) => { if (event.key === 'Escape' && !busy) onClose(); };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [busy, onClose]);
   const submit = async (event) => {
     event.preventDefault();
     if (!message.trim() || busy) return;
@@ -1212,7 +1235,7 @@ function FeedbackDialog({ onClose }) {
     } catch (error) { setNotice(messageFor(error, '反馈提交失败，请稍后重试。')); }
     finally { setBusy(false); }
   };
-  return <div className="backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="dialog feedback-dialog" role="dialog" aria-modal="true" aria-labelledby="feedback-title"><header className="dialog-header"><div><span className="kicker">帮助我们变得更好</span><h2 id="feedback-title">意见反馈</h2></div><button className="icon-button" type="button" onClick={onClose} aria-label="关闭反馈窗口"><X size={19} /></button></header><p className="feedback-reward-note">反馈一经采纳，将发送 10 点额度到你的 QQ 邮箱。</p><form className="auth-form" onSubmit={submit}><label className="input-field"><span>告诉我们你的想法</span><textarea value={message} maxLength="2000" rows="6" onChange={(event) => setMessage(event.target.value)} placeholder="可以反馈功能建议、使用问题或改进想法" /></label><Notice tone={notice.startsWith('感谢') ? 'success' : 'error'}>{notice}</Notice><button className="primary-button" type="submit" disabled={busy || !message.trim()}>{busy ? '提交中…' : '提交反馈'}</button></form></section></div>;
+  return <div className="backdrop" onMouseDown={(event) => event.target === event.currentTarget && !busy && onClose()}><section className="dialog feedback-dialog" role="dialog" aria-modal="true" aria-labelledby="feedback-title"><header className="dialog-header"><div><span className="kicker">帮助我们变得更好</span><h2 id="feedback-title">意见反馈</h2></div><button className="icon-button" type="button" onClick={onClose} aria-label="关闭反馈窗口"><X size={19} /></button></header><p className="feedback-reward-note">反馈一经采纳，将发送 10 点额度到你的 QQ 邮箱。</p><form className="auth-form" onSubmit={submit}><label className="input-field"><span>告诉我们你的想法</span><textarea autoFocus value={message} maxLength="2000" rows="6" onChange={(event) => setMessage(event.target.value)} placeholder="可以反馈功能建议、使用问题或改进想法" /></label><Notice tone={notice.startsWith('感谢') ? 'success' : 'error'}>{notice}</Notice><button className="primary-button" type="submit" disabled={busy || !message.trim()}>{busy ? '提交中…' : '提交反馈'}</button></form></section></div>;
 }
 
 function AppShell({ user, onLogout }) {

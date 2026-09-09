@@ -179,7 +179,9 @@ export class AppApi {
       const metadata = this.objectStorage.metadataFor(key)
       if (!metadata || metadata.ownerId !== user.id) return json({ ok: false, code: 'NOT_FOUND' }, 404)
       const object = await this.objectStorage.get({ key })
-      return new Response(object.body, { status: 200, headers: { 'content-type': metadata.mimeType, 'content-length': String(metadata.sizeBytes), 'cache-control': 'private, max-age=3600', 'x-content-type-options': 'nosniff' } })
+      // Object keys are UUID-scoped and immutable, so let returning users reuse
+      // yesterday's images instead of downloading them from COS again.
+      return new Response(object.body, { status: 200, headers: { 'content-type': metadata.mimeType, 'content-length': String(metadata.sizeBytes), 'cache-control': 'private, max-age=31536000, immutable', 'x-content-type-options': 'nosniff' } })
     }
 
     if (method === 'GET' && pathname === '/api/credits') return safeResult(this.creditLedger.getBalance({ sessionToken }))
