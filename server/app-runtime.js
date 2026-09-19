@@ -10,6 +10,8 @@ import { GenerationService, MemoryGenerationStore, ProviderRegistry } from './ge
 import { MemoryPaymentStore, PaymentService } from './payment-service.js'
 import { MemoryWorksStore, WorksService } from './works-service.js'
 import { MemoryStyleStore, StyleService } from './style-service.js'
+import { AdminStyleReferenceService, MemoryAdminStyleReferenceStore } from './admin-style-reference-service.js'
+import { INTERIOR_SOP_SYSTEM_PROMPT, extractSopPrompt, sopUserMessage } from './sop-prompt.js'
 
 function localPaymentProvider() {
   return {
@@ -23,8 +25,8 @@ function localGenerationProvider() {
 }
 
 export const GENERATION_TIMEOUT_MS = 150_000
+export const CONVERSATION_TIMEOUT_MS = 60_000
 const PROVIDER_TEST_TIMEOUT_MS = 60_000
-const DUOYUANX_DUAL_REFERENCE_PIXELS = 704_512
 
 const STYLE_DIRECTIONS = {
   中古风: 'Mid-century vintage design: warm walnut and teak, cream walls, caramel leather, sculptural wood furniture, restrained brass and period lighting; rich but coordinated retro textures.',
@@ -85,11 +87,10 @@ export function generationSizeForImage(image, targetPixels = 1024 * 1024) {
   return `${width}x${height}`
 }
 
-function imageEditForm({ model, image, styleImage, prompt, size }) {
+function imageEditForm({ model, image, prompt, size }) {
   const form = new FormData()
   form.set('model', model)
   form.set('image', new Blob([image.data], { type: image.type }), image.type === 'image/jpeg' ? 'room.jpg' : 'room.png')
-  if (styleImage) form.append('image', new Blob([styleImage.data], { type: styleImage.type }), 'style-reference.png')
   form.set('prompt', prompt)
   form.set('size', size)
   form.set('n', '1')
@@ -106,7 +107,8 @@ function usesJsonReferenceImage(endpoint) {
   }
 }
 
-function providerProtocol(endpoint) {
+function providerProtocol(endpoint, kind = 'image') {
+  if (kind === 'conversation') return 'chat-completions'
   return usesJsonReferenceImage(endpoint) ? 'json-reference-image' : 'multipart-image-edit'
 }
 
@@ -130,11 +132,10 @@ async function upstreamFailure(response) {
   }
 }
 
-function imageProviderRequest({ endpoint, model, image, styleImage, prompt, apiKey, traceId }) {
+function imageProviderRequest({ endpoint, model, image, prompt, apiKey, traceId }) {
   const headers = { accept: 'application/json', authorization: `Bearer ${apiKey}`, 'x-request-id': traceId }
   const jsonReferenceImage = usesJsonReferenceImage(endpoint)
-  const targetPixels = jsonReferenceImage && styleImage ? DUOYUANX_DUAL_REFERENCE_PIXELS : 1024 * 1024
-  const size = generationSizeForImage(image, targetPixels)
+  const size = generationSizeForImage(image)
   if (jsonReferenceImage) {
     headers['content-type'] = 'application/json'
     return {
@@ -142,14 +143,14 @@ function imageProviderRequest({ endpoint, model, image, styleImage, prompt, apiK
       body: JSON.stringify({
         model,
         prompt,
-        image: styleImage ? [Buffer.from(image.data).toString('base64'), Buffer.from(styleImage.data).toString('base64')] : Buffer.from(image.data).toString('base64'),
+        image: Buffer.from(image.data).toString('base64'),
         size,
         n: 1,
         response_format: 'url',
       }),
     }
   }
-  return { headers, body: imageEditForm({ model, image, styleImage, prompt, size }) }
+  return { headers, body: imageEditForm({ model, image, prompt, size }) }
 }
 
 function diagnosticError(message, { code, stage, httpStatus } = {}) {
@@ -160,18 +161,69 @@ function diagnosticError(message, { code, stage, httpStatus } = {}) {
   return error
 }
 
-export function configuredGenerationProvider({ adminProviderService, fallback, fetchImpl = globalThis.fetch, logger = console, timeoutMs = GENERATION_TIMEOUT_MS }) {
+function conversationRequest({ model, image, params, apiKey, traceId }) {
+  const imageDataUrl = `data:${image.type};base64,${Buffer.from(image.data).toString('base64')}`
+  return {
+    headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${apiKey}`, 'x-request-id': traceId },
+    body: JSON.stringify({
+      model,
+      temperature: 0.2,
+      max_tokens: 1200,
+      messages: [
+        { role: 'system', content: INTERIOR_SOP_SYSTEM_PROMPT },
+        { role: 'user', content: [{ type: 'text', text: sopUserMessage({ params, isRevision: Boolean(params?.editPrompt) }) }, { type: 'image_url', image_url: { url: imageDataUrl, detail: 'high' } }] },
+      ],
+    }),
+  }
+}
+
+function conversationContent(payload) {
+  return payload?.choices?.[0]?.message?.content ?? payload?.output?.[0]?.content ?? payload?.content
+}
+
+export function configuredConversationProvider({ adminProviderService, fetchImpl = globalThis.fetch, logger = console, timeoutMs = CONVERSATION_TIMEOUT_MS }) {
+  return {
+    analyze: async ({ image, params, traceId }) => {
+      const configured = adminProviderService.getEnabledConfig('conversation')
+      if (!configured.ok) {
+        const error = diagnosticError('Conversation provider is unavailable', { code: 'CONVERSATION_PROVIDER_UNAVAILABLE', stage: 'configuration' })
+        throw error
+      }
+      const provider = configured.provider
+      const startedAt = Date.now()
+      logger.info?.('[Generation]', { traceId, stage: 'conversation-request', provider: provider.name, model: provider.model, protocol: 'chat-completions' })
+      try {
+        const request = conversationRequest({ model: provider.model, image, params, apiKey: provider.apiKey, traceId })
+        const response = await fetchImpl(provider.endpoint, { method: 'POST', ...request, signal: AbortSignal.timeout(timeoutMs), redirect: 'error' })
+        logger.info?.('[Generation]', { traceId, stage: 'conversation-response', provider: provider.name, model: provider.model, protocol: 'chat-completions', httpStatus: response.status, elapsedMs: Date.now() - startedAt })
+        if (!response.ok) throw diagnosticError('Conversation provider request failed', { code: 'CONVERSATION_HTTP_ERROR', stage: 'response', httpStatus: response.status })
+        let payload
+        try { payload = await response.json() } catch { throw diagnosticError('Conversation provider response was not JSON', { code: 'INVALID_CONVERSATION_RESPONSE', stage: 'parse', httpStatus: response.status }) }
+        const prompt = extractSopPrompt(conversationContent(payload))
+        return { prompt, providerMs: Date.now() - startedAt }
+      } catch (reason) {
+        const timeout = reason?.name === 'TimeoutError' || reason?.name === 'AbortError' || reason?.code === 'ABORT_ERR'
+        const failure = timeout ? diagnosticError('Conversation provider request timed out', { code: 'CONVERSATION_TIMEOUT', stage: 'request' }) : reason
+        logger.error?.('[Generation]', { traceId, stage: failure?.stage ?? 'request', provider: provider.name, model: provider.model, protocol: 'chat-completions', code: failure?.code ?? 'CONVERSATION_REQUEST_FAILED', elapsedMs: Date.now() - startedAt, ...(failure?.httpStatus ? { httpStatus: failure.httpStatus } : {}) })
+        throw failure
+      }
+    },
+  }
+}
+
+export function configuredGenerationProvider({ adminProviderService, fallback, conversationProvider, fetchImpl = globalThis.fetch, logger = console, timeoutMs = GENERATION_TIMEOUT_MS }) {
   return {
     generate: async ({ image, params, traceId }) => {
-      const configured = adminProviderService.getEnabledConfig()
+      const configured = adminProviderService.getEnabledConfig('image')
       if (!configured.ok) return fallback.generate({ image, params, traceId })
       const provider = configured.provider
       const startedAt = Date.now()
-      const protocol = providerProtocol(provider.endpoint)
-      logger.info?.('[Generation]', { traceId, stage: 'provider-request', provider: provider.name, model: provider.model, protocol })
+      const protocol = providerProtocol(provider.endpoint, 'image')
       try {
-        const styleImage = params?.styleReference?.data ? params.styleReference : null
-        const request = imageProviderRequest({ endpoint: provider.endpoint, model: provider.model, image, styleImage, prompt: generationPrompt(params), apiKey: provider.apiKey, traceId })
+        if (!conversationProvider) throw diagnosticError('Conversation provider is unavailable', { code: 'CONVERSATION_PROVIDER_UNAVAILABLE', stage: 'configuration' })
+        const analysis = await conversationProvider.analyze({ image, params, traceId })
+        logger.info?.('[Generation]', { traceId, stage: 'image-request', provider: provider.name, model: provider.model, protocol, conversationMs: analysis.providerMs })
+        const request = imageProviderRequest({ endpoint: provider.endpoint, model: provider.model, image, prompt: analysis.prompt, apiKey: provider.apiKey, traceId })
         const response = await fetchImpl(provider.endpoint, {
           method: 'POST',
           ...request,
@@ -186,7 +238,7 @@ export function configuredGenerationProvider({ adminProviderService, fallback, f
         const url = result?.url || (result?.b64_json ? `data:image/png;base64,${result.b64_json}` : null)
         if (!url) throw diagnosticError('Provider response did not contain an image', { code: 'INVALID_PROVIDER_RESPONSE', stage: 'validation', httpStatus: response.status })
         const providerMs = Date.now() - startedAt
-        return { effectImage: { url, mimeType: result?.mimeType ?? 'image/png' }, timings: { providerMs } }
+        return { effectImage: { url, mimeType: result?.mimeType ?? 'image/png' }, generationPrompt: analysis.prompt, timings: { providerMs, conversationMs: analysis.providerMs } }
       } catch (reason) {
         const timeout = reason?.name === 'TimeoutError' || reason?.code === 'ABORT_ERR'
         const failure = timeout ? diagnosticError('Provider request timed out', { code: 'PROVIDER_TIMEOUT', stage: 'request' }) : reason
@@ -223,14 +275,34 @@ async function validProviderTestImage(image, fetchImpl) {
   return validImageBytes(bytes)
 }
 
-export async function testConfiguredProvider({ endpoint, model, apiKey, traceId, fetchImpl = globalThis.fetch, timeoutMs = PROVIDER_TEST_TIMEOUT_MS }) {
+export async function testConfiguredConversationProvider({ endpoint, model, apiKey, traceId, fetchImpl = globalThis.fetch, timeoutMs = PROVIDER_TEST_TIMEOUT_MS }) {
   const startedAt = Date.now()
-  const protocol = providerProtocol(endpoint)
+  const request = conversationRequest({ model, image: { type: 'image/png', data: PROVIDER_TEST_PNG }, params: { room: '客厅', theme: '现代简约', scale: '均衡', userPrompt: '保持结构不变，进行克制的真实室内改造。' }, apiKey, traceId })
+  let response
+  try {
+    response = await fetchImpl(endpoint, { method: 'POST', ...request, signal: AbortSignal.timeout(timeoutMs), redirect: 'error' })
+  } catch (reason) {
+    const timeout = reason?.name === 'TimeoutError' || reason?.name === 'AbortError' || reason?.code === 'ABORT_ERR' || reason?.code === 23
+    return { ok: false, code: timeout ? 'PROVIDER_TIMEOUT' : 'PROVIDER_REQUEST_FAILED', message: timeout ? `Provider 在 ${Math.round(timeoutMs / 1000)} 秒内未返回结果` : '无法连接 Provider', stage: 'request', protocol: 'chat-completions', elapsedMs: Date.now() - startedAt }
+  }
+  if (!response.ok) {
+    const diagnostic = await upstreamFailure(response)
+    return { ok: false, code: 'PROVIDER_TEST_FAILED', message: diagnostic.upstreamMessage ?? `Provider returned ${response.status}`, stage: 'response', httpStatus: response.status, protocol: 'chat-completions', elapsedMs: Date.now() - startedAt, ...diagnostic }
+  }
+  let payload
+  try { payload = await response.json() } catch { return { ok: false, code: 'INVALID_PROVIDER_RESPONSE', message: 'Provider 返回的不是有效 JSON', stage: 'parse', httpStatus: response.status, protocol: 'chat-completions', elapsedMs: Date.now() - startedAt } }
+  try { extractSopPrompt(conversationContent(payload)) } catch { return { ok: false, code: 'INVALID_PROVIDER_RESPONSE', message: '对话 Provider 未返回规定格式的图生图提示词', stage: 'validation', httpStatus: response.status, protocol: 'chat-completions', elapsedMs: Date.now() - startedAt } }
+  return { ok: true, httpStatus: response.status, protocol: 'chat-completions', elapsedMs: Date.now() - startedAt }
+}
+
+export async function testConfiguredProvider({ endpoint, model, apiKey, traceId, kind = 'image', fetchImpl = globalThis.fetch, timeoutMs = PROVIDER_TEST_TIMEOUT_MS }) {
+  if (kind === 'conversation') return testConfiguredConversationProvider({ endpoint, model, apiKey, traceId, fetchImpl, timeoutMs })
+  const startedAt = Date.now()
+  const protocol = providerProtocol(endpoint, kind)
   const request = imageProviderRequest({
     endpoint,
     model,
     image: { type: 'image/png', data: PROVIDER_TEST_PNG },
-    styleImage: { type: 'image/png', data: PROVIDER_TEST_PNG },
     prompt: 'Edit this room reference image while preserving its geometry and camera viewpoint. Apply a minimal modern interior style.',
     apiKey,
     traceId,
@@ -275,12 +347,14 @@ export function createAppRuntime({ mailer, paymentProvider = localPaymentProvide
   const testProvider = providerTester ?? ((config) => testConfiguredProvider({ ...config, fetchImpl }))
   const adminProviderService = new AdminProviderService({ authService, store: stores.providers ?? new MemoryAdminProviderStore(), encryptionKey, isAdmin, testProvider, logger })
   const adminOverviewService = new AdminOverviewService({ database: stores.database, authService, isAdmin })
-  const providers = new ProviderRegistry({ default: configuredGenerationProvider({ adminProviderService, fallback: generationProvider ?? localGenerationProvider(), fetchImpl, logger }) })
+  const conversationProvider = configuredConversationProvider({ adminProviderService, fetchImpl, logger })
+  const providers = new ProviderRegistry({ default: configuredGenerationProvider({ adminProviderService, fallback: generationProvider ?? localGenerationProvider(), conversationProvider, fetchImpl, logger }) })
   const generationService = new GenerationService({ authService, store: stores.generations ?? new MemoryGenerationStore(), providers, creditLedger, objectStorage, fetchImpl, logger })
   const paymentService = new PaymentService({ authService, creditLedger, store: stores.payments ?? new MemoryPaymentStore(), provider: paymentProvider })
   const worksService = new WorksService({ authService, store: stores.works ?? new MemoryWorksStore() })
   const styleService = new StyleService({ authService, store: stores.styles ?? new MemoryStyleStore() })
-  const api = new AppApi({ authService, generationService, creditLedger, paymentService, worksService, adminProviderService, redemptionCodeService, feedbackService, adminOverviewService, styleService, objectStorage, secureCookies, allowedOrigins })
+  const adminStyleReferenceService = new AdminStyleReferenceService({ authService, store: stores.adminStyleReferences ?? new MemoryAdminStyleReferenceStore(), objectStorage, isAdmin })
+  const api = new AppApi({ authService, generationService, creditLedger, paymentService, worksService, adminProviderService, redemptionCodeService, feedbackService, adminOverviewService, styleService, adminStyleReferenceService, objectStorage, secureCookies, allowedOrigins })
   const provisionAdmin = ({ password }) => authService.provisionUser({ email: normalizedAdminEmail, password })
-  return { api, authService, creditLedger, generationService, paymentService, worksService, styleService, adminProviderService, adminOverviewService, redemptionCodeService, feedbackService, objectStorage, provisionAdmin, close }
+  return { api, authService, creditLedger, generationService, paymentService, worksService, styleService, adminStyleReferenceService, adminProviderService, adminOverviewService, redemptionCodeService, feedbackService, objectStorage, provisionAdmin, close }
 }

@@ -1,7 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { configuredGenerationProvider, generationPrompt, generationSizeForImage, GENERATION_TIMEOUT_MS, testConfiguredProvider } from './app-runtime.js'
+import { configuredConversationProvider, configuredGenerationProvider, generationPrompt, generationSizeForImage, GENERATION_TIMEOUT_MS, CONVERSATION_TIMEOUT_MS, testConfiguredConversationProvider, testConfiguredProvider } from './app-runtime.js'
 import { DEFAULT_PROVIDER_TIMEOUT_MS } from './generation-service.js'
+import { INTERIOR_SOP_SYSTEM_PROMPT } from './sop-prompt.js'
 
 const config = {
   ok: true,
@@ -16,7 +17,8 @@ const params = { room: '客厅', theme: '现代简约', scale: '均衡', prefere
 
 test('production generation allows provider latency with orchestration headroom', () => {
   assert.equal(GENERATION_TIMEOUT_MS, 150_000)
-  assert.equal(DEFAULT_PROVIDER_TIMEOUT_MS, 180_000)
+  assert.equal(CONVERSATION_TIMEOUT_MS, 60_000)
+  assert.equal(DEFAULT_PROVIDER_TIMEOUT_MS, 240_000)
   assert.ok(DEFAULT_PROVIDER_TIMEOUT_MS > GENERATION_TIMEOUT_MS)
 })
 
@@ -48,12 +50,42 @@ test('defaults to a visibly large transformation and includes custom style direc
   assert.match(prompt, /浅色木材/u)
 })
 
-function fixture(fetchImpl, timeoutMs = 100, providerConfig = config) {
+test('conversation provider sends the original room image with the exact SOP and extracts the marked prompt', async () => {
+  let request
+  const provider = configuredConversationProvider({
+    adminProviderService: { getEnabledConfig: (kind) => kind === 'conversation' ? { ok: true, provider: { name: 'chat-provider', model: 'vision-model', endpoint: 'https://chat.example.test/v1/chat/completions', apiKey: 'chat-secret' } } : { ok: false } },
+    fetchImpl: async (_url, options) => { request = options; return new Response(JSON.stringify({ choices: [{ message: { content: sopPrompt } }] }), { status: 200 }) },
+  })
+  const result = await provider.analyze({ image: { type: 'image/jpeg', data: Buffer.from('room-photo') }, params, traceId: 'conversation_trace' })
+  const body = JSON.parse(request.body)
+  assert.equal(result.prompt, sopPrompt.slice(sopPrompt.indexOf('】') + 1))
+  assert.equal(body.messages[0].content, INTERIOR_SOP_SYSTEM_PROMPT)
+  assert.equal(body.messages[1].content[1].image_url.url, `data:image/jpeg;base64,${Buffer.from('room-photo').toString('base64')}`)
+  assert.equal(JSON.stringify(request).includes('chat-secret'), true)
+})
+
+test('conversation save gate rejects responses without the required SOP marker', async () => {
+  const result = await testConfiguredConversationProvider({
+    endpoint: 'https://chat.example.test/v1/chat/completions',
+    model: 'vision-model',
+    apiKey: 'chat-save-secret',
+    traceId: 'conversation_gate',
+    fetchImpl: async () => new Response(JSON.stringify({ choices: [{ message: { content: '普通说明，没有规定标记' } }] }), { status: 200 }),
+  })
+  assert.equal(result.ok, false)
+  assert.equal(result.code, 'INVALID_PROVIDER_RESPONSE')
+  assert.equal(result.protocol, 'chat-completions')
+})
+
+const sopPrompt = '【最终图生图提示词】基于上传的原始房间照片进行真实室内改造，保持原始相机视角、透视、构图和房间结构；客厅采用现代简约风格，使用真实材质、真实尺度和自然光线，不要出现明显 AI 感。'
+
+function fixture(fetchImpl, timeoutMs = 100, providerConfig = config, conversationProvider = { analyze: async () => ({ prompt: sopPrompt, providerMs: 3 }) }) {
   const logs = []
   const logger = { info: (...args) => logs.push(args), error: (...args) => logs.push(args) }
   const provider = configuredGenerationProvider({
     adminProviderService: { getEnabledConfig: () => providerConfig },
     fallback: { generate: async () => ({}) },
+    conversationProvider,
     fetchImpl,
     logger,
     timeoutMs,
@@ -77,7 +109,7 @@ test('uses the image edits multipart request once and returns a URL result', asy
   assert.equal(request.body.get('n'), '1')
   assert.equal(request.body.get('response_format'), 'url')
   assert.match(request.body.get('prompt'), /客厅/u)
-  assert.match(request.body.get('prompt'), /LOCKED GEOMETRY/u)
+  assert.match(request.body.get('prompt'), /保持原始相机视角/u)
   const uploaded = request.body.get('image')
   assert.equal(uploaded.type, 'image/png')
   assert.equal(Buffer.from(await uploaded.arrayBuffer()).toString(), 'private-original')
@@ -87,7 +119,7 @@ test('uses the image edits multipart request once and returns a URL result', asy
   assert.equal(JSON.stringify(data.logs).includes('private-original'), false)
 })
 
-test('sends the room photo and style reference as separate image parts', async () => {
+test('sends only the room photo and never sends a style reference', async () => {
   let request
   const data = fixture(async (_url, options) => {
     request = options
@@ -99,11 +131,9 @@ test('sends the room photo and style reference as separate image parts', async (
     traceId: 'generation_two_references',
   })
   const images = request.body.getAll('image')
-  assert.equal(images.length, 2)
+  assert.equal(images.length, 1)
   assert.equal(Buffer.from(await images[0].arrayBuffer()).toString(), 'room-photo')
-  assert.equal(Buffer.from(await images[1].arrayBuffer()).toString(), 'style-photo')
-  assert.match(request.body.get('prompt'), /STYLE MATCH PRIORITY/u)
-  assert.match(request.body.get('prompt'), /same design language/u)
+  assert.equal(request.body.get('prompt'), sopPrompt)
 })
 
 test('uses duoyuanx JSON reference-image protocol for generation', async () => {
@@ -122,7 +152,7 @@ test('uses duoyuanx JSON reference-image protocol for generation', async () => {
   assert.equal(body.size, '1024x1024')
   assert.equal(body.n, 1)
   assert.equal(body.response_format, 'url')
-  assert.match(body.prompt, /LOCKED GEOMETRY/u)
+  assert.equal(body.prompt, sopPrompt)
   assert.deepEqual(result.effectImage, { url: 'https://images.example.test/result.png', mimeType: 'image/png' })
   assert.ok(Number.isFinite(result.timings.providerMs))
   assert.equal(JSON.stringify(data.logs).includes(body.image), false)
@@ -139,7 +169,7 @@ test('requests a landscape result for a landscape reference image', async () => 
   assert.equal(JSON.parse(request.body).size, '1360x768')
 })
 
-test('reduces only duoyuanx dual-reference output pixels while preserving source orientation', async () => {
+test('keeps duoyuanx output pixels aligned to the source orientation without a second image', async () => {
   let request
   const duoyuanConfig = { ok: true, provider: { ...config.provider, name: 'duoyuanx', endpoint: 'https://duoyuanx.com/v1/images/generations' } }
   const data = fixture(async (_url, options) => {
@@ -148,12 +178,12 @@ test('reduces only duoyuanx dual-reference output pixels while preserving source
   }, 100, duoyuanConfig)
   await data.provider.generate({
     image: { type: 'image/jpeg', width: 960, height: 640, data: Buffer.from('private-original') },
-    params: { ...params, styleReference: { type: 'image/png', data: Buffer.from('private-style') } },
+    params,
     traceId: 'generation_duoyuan_dual_reference',
   })
   const body = JSON.parse(request.body)
-  assert.equal(body.size, '1024x688')
-  assert.equal(body.image.length, 2)
+  assert.equal(body.size, '1248x832')
+  assert.equal(typeof body.image, 'string')
 })
 
 test('supports base64 Images API output without logging image content', async () => {
@@ -239,9 +269,7 @@ test('save gate uses duoyuanx JSON reference-image protocol', async () => {
   const body = JSON.parse(request.body)
   assert.equal(request.headers['content-type'], 'application/json')
   assert.equal(body.model, 'gpt-image-2')
-  assert.equal(Array.isArray(body.image), true)
-  assert.equal(body.image.length, 2)
-  assert.equal(body.image[0], body.image[1])
+  assert.equal(typeof body.image, 'string')
   assert.equal(body.n, 1)
   assert.equal(body.response_format, 'url')
   assert.equal(JSON.stringify(request).includes('duoyuan-save-gate-secret'), true)

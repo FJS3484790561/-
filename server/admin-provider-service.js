@@ -3,6 +3,7 @@ import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from 'node:
 const MASKED_SECRET = '********'
 const CONFIG_ACTIONS = new Set(['created', 'updated', 'enabled', 'disabled'])
 const REQUIRED_TEXT_FIELDS = ['name', 'endpoint', 'model']
+const PROVIDER_KINDS = new Set(['image', 'conversation'])
 
 function assertEncryptionKey(key) {
   if (!Buffer.isBuffer(key) || key.length !== 32) throw new Error('encryptionKey must be a 32-byte Buffer')
@@ -32,6 +33,7 @@ function publicConfig(config) {
     name: config.name,
     endpoint: config.endpoint,
     model: config.model,
+    kind: config.kind ?? 'image',
     enabled: config.enabled,
     apiKeyConfigured: Boolean(config.encryptedApiKey),
     apiKeyMasked: config.encryptedApiKey ? MASKED_SECRET : null,
@@ -116,12 +118,12 @@ export class AdminProviderService {
     return { ok: true, apiKey: decryptSecret(config.encryptedApiKey, this.encryptionKey) }
   }
 
-  async testAndSave({ sessionToken, providerId, name, endpoint, model, apiKey }) {
+  async testAndSave({ sessionToken, providerId, name, endpoint, model, kind, apiKey }) {
     const access = this.#authorize(sessionToken)
     if (!access.ok) return access
     const existing = providerId ? this.store.configs.get(providerId) : null
     if (providerId && (!existing || !this.canManage(access.user.id, existing.name))) return { ok: false, code: 'NOT_FOUND' }
-    const next = { name: name === undefined ? existing?.name : cleanText(name), endpoint: endpoint === undefined ? existing?.endpoint : cleanText(endpoint), model: model === undefined ? existing?.model : cleanText(model) }
+    const next = { name: name === undefined ? existing?.name : cleanText(name), endpoint: endpoint === undefined ? existing?.endpoint : cleanText(endpoint), model: model === undefined ? existing?.model : cleanText(model), kind: kind === undefined ? (existing?.kind ?? 'image') : cleanText(kind) }
     const secret = apiKey === undefined ? (existing ? decryptSecret(existing.encryptedApiKey, this.encryptionKey) : '') : apiKey
     const fields = this.#validate({ ...next, apiKey: secret }, { requireKey: true })
     if (fields) return { ok: false, code: 'VALIDATION_ERROR', fields }
@@ -173,8 +175,8 @@ export class AdminProviderService {
     return { ok: true, provider: publicConfig(config) }
   }
 
-  getEnabledConfig() {
-    const config = [...this.store.configs.values()].find((candidate) => candidate.enabled)
+  getEnabledConfig(kind = 'image') {
+    const config = [...this.store.configs.values()].find((candidate) => candidate.enabled && (candidate.kind ?? 'image') === kind)
     if (!config) return { ok: false, code: 'PROVIDER_NOT_AVAILABLE' }
     return {
       ok: true,
@@ -183,6 +185,7 @@ export class AdminProviderService {
         name: config.name,
         endpoint: config.endpoint,
         model: config.model,
+        kind: config.kind ?? 'image',
         apiKey: decryptSecret(config.encryptedApiKey, this.encryptionKey),
       },
     }
@@ -195,9 +198,10 @@ export class AdminProviderService {
     return { ok: true, user }
   }
 
-  #validate({ name, endpoint, model, apiKey }, { requireKey, allowMissingKey = false }) {
+  #validate({ name, endpoint, model, kind, apiKey }, { requireKey, allowMissingKey = false }) {
     const fields = {}
     for (const field of REQUIRED_TEXT_FIELDS) if (!cleanText({ name, endpoint, model }[field])) fields[field] = `${field} is required`
+    if (!PROVIDER_KINDS.has(kind)) fields.kind = 'kind must be image or conversation'
     if (requireKey && !cleanText(apiKey)) fields.apiKey = 'apiKey is required'
     if (!allowMissingKey && apiKey !== undefined && !cleanText(apiKey)) fields.apiKey = 'apiKey is required'
     if (apiKey !== undefined && typeof apiKey !== 'string') fields.apiKey = 'apiKey must be text'
@@ -210,4 +214,4 @@ export class AdminProviderService {
   }
 }
 
-export const adminProviderConstants = { MASKED_SECRET, CONFIG_ACTIONS }
+export const adminProviderConstants = { MASKED_SECRET, CONFIG_ACTIONS, PROVIDER_KINDS }

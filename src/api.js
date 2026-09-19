@@ -41,6 +41,7 @@ export const api = {
   works: () => request('/api/works'),
   work: (id) => request(`/api/works/${encodeURIComponent(id)}`),
   styles: () => request('/api/styles'),
+  styleReferences: () => request('/api/style-references'),
   createStyle: (payload) => post('/api/styles', payload),
   saveWork: (payload) => post('/api/works', payload),
   submitFeedback: (message) => post('/api/feedback', { message }),

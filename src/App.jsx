@@ -13,7 +13,6 @@ import {
   LogOut,
   Menu,
   MessageSquare,
-  Plus,
   RefreshCw,
   ShieldCheck,
   Sparkles,
@@ -21,27 +20,19 @@ import {
   WandSparkles,
   X,
 } from "lucide-react";
-import { ApiError, api, fileToImage, pollGeneration, styleReferenceFor } from "./api";
-import styleModernMinimal from "./assets/style-modern-minimal.jpg";
-import styleScandinavian from "./assets/style-scandinavian.jpg";
-import styleJapanese from "./assets/style-japanese.jpg";
-import styleCream from "./assets/style-cream.jpg";
-import styleNaturalWood from "./assets/style-natural-wood.jpg";
-import styleLightLuxury from "./assets/style-light-luxury.jpg";
-import styleMidCentury from "./assets/style-mid-century.jpg";
-import styleWabiSabi from "./assets/style-wabi-sabi.jpg";
+import { ApiError, api, fileToImage, pollGeneration } from "./api";
 import uploadGoodPhoto from "./assets/upload-good.jpg";
 import uploadBadPhoto from "./assets/upload-bad.jpg";
 
 const themes = [
-  { name: "现代简约", image: styleModernMinimal, description: "克制、明亮、线条利落" },
-  { name: "北欧", image: styleScandinavian, description: "自然、轻盈、舒适" },
-  { name: "日式", image: styleJapanese, description: "留白、木质、宁静" },
-  { name: "奶油风", image: styleCream, description: "柔和、圆润、温暖" },
-  { name: "原木风", image: styleNaturalWood, description: "自然、质朴、有温度" },
-  { name: "轻奢", image: styleLightLuxury, description: "精致、沉稳、有层次" },
-  { name: "中古风", image: styleMidCentury, description: "复古、温润、有质感" },
-  { name: "侘寂风", image: styleWabiSabi, description: "自然、克制、松弛" },
+  { name: "现代简约", description: "克制、明亮、线条利落" },
+  { name: "北欧", description: "自然、轻盈、舒适" },
+  { name: "日式", description: "留白、木质、宁静" },
+  { name: "奶油风", description: "柔和、圆润、温暖" },
+  { name: "原木风", description: "自然、质朴、有温度" },
+  { name: "轻奢", description: "精致、沉稳、有层次" },
+  { name: "中古风", description: "复古、温润、有质感" },
+  { name: "侘寂风", description: "自然、克制、松弛" },
 ];
 const rooms = ["客厅", "卧室", "餐厅", "厨房", "书房"];
 const packs = [
@@ -357,31 +348,12 @@ function GenerationProgress({ elapsedMs }) {
   );
 }
 
-function ThemePicker({ value, onChange, styles, onCustom, onAdd }) {
-  return <div className="field"><span>设计风格 · 图片参考</span><div className="theme-picker" role="radiogroup" aria-label="设计风格">
+function ThemePicker({ value, onChange, styleReferences = [] }) {
+  return <div className="field"><span>设计风格 · 仅作文字方向</span><div className="theme-picker" role="radiogroup" aria-label="设计风格">
     {themes.map((theme) => <button key={theme.name} type="button" className={`theme-card ${value === theme.name ? "selected" : ""}`} aria-pressed={value === theme.name} onClick={() => onChange(theme.name)}>
-      <span className="theme-art"><img src={theme.image} alt="" /></span><strong>{theme.name}</strong><small>{theme.description}</small>
+      {styleReferences.find((reference) => reference.theme === theme.name)?.image?.url ? <span className="theme-art"><img src={styleReferences.find((reference) => reference.theme === theme.name).image.url} alt="" /></span> : <span className="theme-art theme-art-empty" aria-hidden="true" />} <strong>{theme.name}</strong><small>{theme.description}</small>
     </button>)}
-    {styles.map((style) => <button key={style.id} type="button" className={`theme-card ${value === style.id ? 'selected' : ''}`} aria-pressed={value === style.id} onClick={() => onCustom(style)}><span className="theme-art"><img src={`data:${style.image.type};base64,${style.image.dataBase64}`} alt="" /></span><strong>{style.name}</strong><small>我的风格 · 仅自己可见</small></button>)}
-    <button type="button" className="theme-card custom-style-add" onClick={onAdd}><span className="theme-art"><Plus size={30} /></span><strong>自定义风格</strong><small>添加参考图</small></button>
   </div></div>
-}
-
-function CustomStylePanel({ onSaved, onClose }) {
-  const [file, setFile] = useState(null);
-  const [name, setName] = useState('');
-  const [prompt, setPrompt] = useState('');
-  const [message, setMessage] = useState('');
-  const [busy, setBusy] = useState(false);
-  async function save(event) {
-    event.preventDefault();
-    if (!file?.payload || !name.trim() || !prompt.trim() || busy) return;
-    setBusy(true);
-    try { const result = await api.createStyle({ name, prompt, image: file.payload }); onSaved(result.style) }
-    catch (error) { setMessage(messageFor(error, '风格保存失败。')) }
-    finally { setBusy(false) }
-  }
-  return <div className="backdrop"><section className="dialog custom-style-dialog" role="dialog" aria-modal="true" aria-labelledby="custom-style-title"><header className="dialog-header"><div><h2 id="custom-style-title">自定义风格</h2><p>保存后仅你本人可见，可重复选择使用。</p></div><button type="button" className="icon-button" disabled={busy} onClick={onClose} aria-label="关闭自定义风格"><X /></button></header><form className="auth-form" onSubmit={save}><label className="input-field"><span>风格参考图</span><input type="file" accept="image/jpeg,image/png" disabled={busy} onChange={async (event) => { const chosen = event.target.files?.[0]; if (!chosen) return; setFile(null); if (!['image/jpeg','image/png'].includes(chosen.type) || chosen.size > 10 * 1024 * 1024) { setMessage('请选择 10MB 以内的 JPEG 或 PNG 图片。'); return } setBusy(true); try { setFile(await fileToImage(chosen)); setMessage('') } catch (error) { setMessage(messageFor(error)) } finally { setBusy(false) } }} /></label>{file && <img className="style-preview" src={file.previewUrl} alt="自定义风格预览" />}<label className="input-field"><span>风格名称</span><input value={name} required maxLength="80" onChange={(event) => setName(event.target.value)} /></label><label className="input-field"><span>风格描述</span><textarea value={prompt} required maxLength="600" rows="3" onChange={(event) => setPrompt(event.target.value)} placeholder="例如：暖白墙面、浅木家具、亚麻窗帘" /></label><Notice tone="error">{message}</Notice><button className="primary-button" disabled={busy || !file} type="submit">{busy ? '处理中…' : '保存并使用'}</button></form></section></div>
 }
 
 function UploadGuidance({ expanded, onToggle }) {
@@ -412,16 +384,11 @@ function UploadGuidance({ expanded, onToggle }) {
   );
 }
 
-function Workbench({ credits, refreshCredits, onSaved }) {
+function Workbench({ credits, refreshCredits, onSaved, styleReferences }) {
   const [theme, setTheme] = useState(themes[0].name);
   const [room, setRoom] = useState("");
-  const [styleReference, setStyleReference] = useState(null);
-  const [customStylePrompt, setCustomStylePrompt] = useState('');
   const [userPrompt, setUserPrompt] = useState('');
   const [history, setHistory] = useState([]);
-  const [styles, setStyles] = useState([]);
-  const [customStyleId, setCustomStyleId] = useState(null);
-  const [customOpen, setCustomOpen] = useState(false);
   const [designParams, setDesignParams] = useState(null);
   const [pendingRevision, setPendingRevision] = useState(null);
   const [image, setImage] = useState(null);
@@ -452,19 +419,6 @@ function Workbench({ credits, refreshCredits, onSaved }) {
       document.removeEventListener('keydown', onKeyDown);
     };
   }, [editOpen, editBusy]);
-  useEffect(() => { let active = true; api.styles().then((result) => { if (active) setStyles(result.styles ?? []) }).catch(() => { if (active) setNotice({ tone: 'error', text: '自定义风格加载失败，请刷新后重试。' }) }); return () => { active = false } }, []);
-  useEffect(() => {
-    if (theme === '自定义') return undefined;
-    let active = true;
-    styleReferenceFor(themes.find((item) => item.name === theme).image)
-      .then((value) => { if (active) setStyleReference(value) })
-      .catch(() => { if (active) setNotice({ tone: 'error', text: '风格参考图加载失败，请重新选择。' }) });
-    return () => { active = false };
-  }, [theme]);
-  const selectCustomStyle = (style) => {
-    setTheme('自定义'); setCustomStyleId(style.id); setCustomStylePrompt(style.prompt);
-    setStyleReference({ type: style.image.type, dataBase64: style.image.dataBase64 });
-  };
   useEffect(() => {
     if (!["creating", "polling"].includes(status) || !generationStartedAt) return undefined;
     const update = () => setGenerationElapsedMs(Date.now() - generationStartedAt);
@@ -472,7 +426,7 @@ function Workbench({ credits, refreshCredits, onSaved }) {
     const timer = window.setInterval(update, 1000);
     return () => window.clearInterval(timer);
   }, [generationStartedAt, status]);
-  const params = { room, theme, styleReference, customStylePrompt, userPrompt };
+  const params = { room, theme, userPrompt };
   const resultUrl = task?.result?.effectImage?.url;
   const statusText = {
     empty: "上传一张房间照片开始设计",
@@ -633,7 +587,7 @@ function Workbench({ credits, refreshCredits, onSaved }) {
     try {
       let revisionId = pendingRevision;
       if (!revisionId) {
-        const created = await api.reviseGeneration(task.id, { prompt: editPrompt.trim(), styleReference: designParams?.styleReference ?? styleReference });
+        const created = await api.reviseGeneration(task.id, { prompt: editPrompt.trim() });
         revisionId = created.task.id; setPendingRevision(revisionId);
       }
       const completed = await pollGeneration(revisionId, { signal: controller.signal });
@@ -689,13 +643,12 @@ function Workbench({ credits, refreshCredits, onSaved }) {
               onChange={setRoom}
               placeholder="请选择空间类型"
             />
-            <ThemePicker value={customStyleId ?? theme} styles={styles} onCustom={selectCustomStyle} onAdd={() => setCustomOpen(true)} onChange={(name) => { if (name !== theme) setStyleReference(null); setTheme(name); setCustomStyleId(null); setCustomStylePrompt('') }} />
-            {customOpen && <CustomStylePanel onClose={() => setCustomOpen(false)} onSaved={(style) => { setStyles((items) => [...items, style]); selectCustomStyle(style); setCustomOpen(false) }} />}
+            <ThemePicker value={theme} onChange={setTheme} styleReferences={styleReferences} />
             <label className="input-field"><span>生成提示词（可选）</span><textarea value={userPrompt} onChange={(event) => setUserPrompt(event.target.value)} placeholder="例如：保留落地窗，增加收纳，整体更温暖" rows="3" maxLength="2000" /></label>
           </div>
           <button
             className="primary-button"
-            disabled={saving || editBusy || Boolean(pendingRevision) || ["creating", "polling"].includes(status) || !styleReference}
+            disabled={saving || editBusy || Boolean(pendingRevision) || ["creating", "polling"].includes(status)}
             type="button"
             onClick={generate}
           >
@@ -1244,6 +1197,7 @@ function AppShell({ user, onLogout }) {
   const [credits, setCredits] = useState(null);
   const [worksRefresh, setWorksRefresh] = useState(0);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [styleReferences, setStyleReferences] = useState([]);
   const refreshCredits = useCallback(async () => {
     try {
       setCredits(await api.credits());
@@ -1262,6 +1216,11 @@ function AppShell({ user, onLogout }) {
     return () => {
       active = false;
     };
+  }, []);
+  useEffect(() => {
+    let active = true;
+    api.styleReferences().then(({ styleReferences: next }) => { if (active) setStyleReferences(next) }).catch(() => {});
+    return () => { active = false; };
   }, []);
   const navigate = (next) => {
     setPage(next);
@@ -1331,6 +1290,7 @@ function AppShell({ user, onLogout }) {
         <Workbench
           credits={credits}
           refreshCredits={refreshCredits}
+          styleReferences={styleReferences}
           onSaved={() => setWorksRefresh((value) => value + 1)}
         />
       )}

@@ -95,14 +95,6 @@ try {
     await page.getByRole("heading", { name: "设计工作台" }).waitFor();
     const currentUser = runtime.authService.store.users.get(registrationEmail);
     runtime.creditLedger.grantForUser({ userId: currentUser.id, amount: 10 });
-    await page.getByRole('button', { name: /中古风/ }).click();
-    await page.getByRole('button', { name: /侘寂风/ }).click();
-    await page.getByRole('button', { name: /自定义风格/ }).click();
-    await page.getByLabel('风格参考图', { exact: true }).setInputFiles({ name: 'custom.png', mimeType: 'image/png', buffer: png });
-    await page.getByLabel('风格名称', { exact: true }).fill('我的暖木');
-    await page.getByLabel('风格描述', { exact: true }).fill('暖白墙、木质家具');
-    await page.getByRole('button', { name: '保存并使用' }).click();
-    await page.getByRole('button', { name: /我的暖木/ }).waitFor();
     await page.getByRole('button', { name: /现代简约/ }).click();
     await page.getByLabel('生成提示词（可选）').fill('保留绿色沙发');
     await page.screenshot({ path: `artifacts/design-updates/${viewport.name}-styles.png`, fullPage: true });
@@ -117,7 +109,7 @@ try {
     await page.getByRole("button", { name: /生成设计/ }).click();
     await page.getByText("设计方案已生成").waitFor();
     if (generatedInputs.at(-1).params.userPrompt !== '保留绿色沙发') throw new Error('Initial user prompt missing');
-    if (generatedInputs.at(-1).params.styleReference.data.length < 10000) throw new Error('Style did not send the actual reference photograph');
+    if (generatedInputs.at(-1).params.styleReference) throw new Error('Style reference must not enter the generation SOP');
     const slider = page.locator(".comparison-slider");
     const sliderBox = await slider.boundingBox();
     const baseBox = await slider.locator(".comparison-base").boundingBox();

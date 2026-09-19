@@ -4,7 +4,7 @@ import { request as httpsRequest } from 'node:https'
 import { isIP } from 'node:net'
 
 const DEFAULT_MAX_IMAGE_BYTES = 10 * 1024 * 1024
-export const DEFAULT_PROVIDER_TIMEOUT_MS = 180_000
+export const DEFAULT_PROVIDER_TIMEOUT_MS = 240_000
 const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png'])
 const ALLOWED_ROOMS = new Set(['客厅', '卧室', '餐厅', '厨房', '书房'])
 const ALLOWED_THEMES = new Set(['现代简约', '北欧', '日式', '奶油风', '原木风', '轻奢', '中古风', '侘寂风', '自定义'])
@@ -34,15 +34,14 @@ function validateRequest({ image, params }, maxImageBytes) {
 
   if (!ALLOWED_ROOMS.has(params?.room)) fields.room = '请选择有效的空间类型。'
   if (!ALLOWED_THEMES.has(params?.theme)) fields.theme = '请选择有效的设计风格。'
-  for (const field of ['userPrompt', 'editPrompt', 'customStylePrompt']) {
+  for (const field of ['userPrompt', 'editPrompt']) {
     if (params?.[field] !== undefined && (typeof params[field] !== 'string' || params[field].length > 2000)) fields[field] = '描述请控制在 2000 字以内。'
   }
-  if (params?.styleReference && (!ALLOWED_IMAGE_TYPES.has(params.styleReference.type) || !matchesImageSignature(params.styleReference.type, imageBytes(params.styleReference)) || imageBytes(params.styleReference).length > maxImageBytes)) fields.styleReference = '风格参考图无效。'
   return Object.keys(fields).length ? error('VALIDATION_ERROR', fields) : null
 }
 
 function safeFailure(reason) {
-  if (reason?.code === 'PROVIDER_TIMEOUT') return { code: 'GENERATION_TIMEOUT', message: '生成时间较长，请稍后重试。' }
+  if (reason?.code === 'PROVIDER_TIMEOUT' || reason?.code === 'CONVERSATION_TIMEOUT') return { code: 'GENERATION_TIMEOUT', message: '生成时间较长，请稍后重试。' }
   if (reason?.code === 'RESULT_DOWNLOAD_FAILED') return { code: 'RESULT_DOWNLOAD_FAILED', message: '生成结果保存失败，本次不会扣除额度。' }
   return { code: 'PROVIDER_UNAVAILABLE', message: '暂时无法生成设计，请稍后重试。' }
 }
@@ -168,7 +167,7 @@ export class GenerationService {
     this.logger = logger
   }
 
-  async createRevision({ sessionToken, taskId, prompt, styleReference }) {
+  async createRevision({ sessionToken, taskId, prompt }) {
     const user = this.authService.getSession(sessionToken)
     if (!user) return error('UNAUTHORIZED')
     const parent = this.store.tasks.get(taskId)
@@ -189,7 +188,7 @@ export class GenerationService {
         if (!stored) return error('REVISION_SOURCE_UNAVAILABLE')
         bytes = stored.bytes; type = stored.mimeType
       }
-      return this.#create({ sessionToken, image: { data: bytes, type, name: 'current-result', width: parent.input.width, height: parent.input.height }, params: { ...parent.params, styleReference, editPrompt: prompt.trim() } }, parent)
+      return this.#create({ sessionToken, image: { data: bytes, type, name: 'current-result', width: parent.input.width, height: parent.input.height }, params: { ...parent.params, editPrompt: prompt.trim() } }, parent)
     } catch {
       return error('REVISION_SOURCE_UNAVAILABLE')
     }
@@ -209,7 +208,9 @@ export class GenerationService {
     if (validation) return Promise.resolve(validation)
     const id = `generation_${randomUUID()}`
     const dimensions = Number.isFinite(image.width) && Number.isFinite(image.height) ? { width: image.width, height: image.height } : {}
-    const task = { id, traceId: id, userId: user.id, status: 'queued', createdAt: this.clock(), updatedAt: this.clock(), input: { name: image.name ?? 'upload', type: image.type, size: imageBytes(image).length, ...dimensions }, params: { ...params, ...(params.styleReference ? { styleReference: { type: params.styleReference.type, size: imageBytes(params.styleReference)?.length ?? 0 } } : {}) } }
+    const designParams = { ...params }
+    delete designParams.styleReference
+    const task = { id, traceId: id, userId: user.id, status: 'queued', createdAt: this.clock(), updatedAt: this.clock(), input: { name: image.name ?? 'upload', type: image.type, size: imageBytes(image).length, ...dimensions }, params: designParams }
     if (parent) {
       task.parentTaskId = parent.id
       task.rootTaskId = parent.rootTaskId ?? parent.id
@@ -229,7 +230,7 @@ export class GenerationService {
       if (reservation?.ok) this.creditLedger?.releaseForUser({ userId: user.id, reservationId: reservation.reservation.id })
       return Promise.resolve(error('GENERATION_PERSISTENCE_FAILED'))
     }
-    queueMicrotask(() => this.#run(task, image, params.styleReference))
+    queueMicrotask(() => this.#run(task, image))
     return Promise.resolve({ ok: true, task: this.#publicTask(task) })
   }
 
@@ -250,7 +251,7 @@ export class GenerationService {
     }
   }
 
-  async #run(task, image, styleReference) {
+  async #run(task, image) {
     const serverStartedAt = Date.now()
     task.timings = { queuedMs: Math.max(0, this.clock() - task.createdAt) }
     task.status = 'running'
@@ -273,7 +274,7 @@ export class GenerationService {
       }
       providerStartedAt = Date.now()
       const output = await Promise.race([
-        provider.generate({ image, params: { ...task.params, styleReference }, traceId: task.traceId }),
+        provider.generate({ image, params: { ...task.params }, traceId: task.traceId }),
         new Promise((_, reject) => { timeoutId = setTimeout(() => reject({ code: 'PROVIDER_TIMEOUT' }), this.providerTimeoutMs) }),
       ])
       clearTimeout(timeoutId)
@@ -310,7 +311,7 @@ export class GenerationService {
           throw settlementError
         }
         task.status = 'succeeded'
-        task.result = { original: { ...(task.originalRoom ?? task.input) }, effectImage }
+        task.result = { original: { ...(task.originalRoom ?? task.input) }, effectImage, ...(output.generationPrompt ? { generationPrompt: output.generationPrompt } : {}) }
         task.updatedAt = this.clock()
         this.store.tasks.set(task.id, task)
       })

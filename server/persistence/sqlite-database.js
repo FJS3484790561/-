@@ -142,6 +142,7 @@ const MIGRATIONS = [
 MIGRATIONS.push({ version: 4, sql: `CREATE TABLE user_styles (style_id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES app_users(entity_id) ON DELETE CASCADE, value_json TEXT NOT NULL); CREATE INDEX user_styles_user ON user_styles(user_id);` })
 MIGRATIONS.push({ version: 5, sql: `CREATE TABLE registration_challenges (challenge_key TEXT PRIMARY KEY, value_json TEXT NOT NULL);` })
 MIGRATIONS.push({ version: 6, sql: `CREATE TABLE user_feedback (feedback_id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES app_users(entity_id) ON DELETE CASCADE, value_json TEXT NOT NULL); CREATE INDEX user_feedback_user ON user_feedback(user_id);` })
+MIGRATIONS.push({ version: 7, sql: `CREATE TABLE admin_style_references (style_reference_id TEXT PRIMARY KEY, value_json TEXT NOT NULL);` })
 const LATEST_SCHEMA_VERSION = MIGRATIONS.at(-1).version
 
 function applyMigrations(database, targetVersion = LATEST_SCHEMA_VERSION) {
@@ -179,7 +180,7 @@ export function openSqliteDatabase({ filename, readonly = false, targetVersion =
 export function verifySqliteDatabase(database) {
   const integrity = database.pragma('integrity_check', { simple: true })
   const foreignKeys = database.pragma('foreign_key_check')
-  const requiredTables = ['app_users', 'auth_sessions', 'password_reset_tokens', 'initialized_credit_users', 'credit_lot_groups', 'credit_reservations', 'credit_reservation_operations', 'credit_operations', 'payment_orders', 'payment_events', 'generation_tasks', 'works', 'provider_configs', 'provider_audit', 'redemption_codes', 'redemption_code_uses', 'user_feedback', 'stored_objects']
+  const requiredTables = ['app_users', 'auth_sessions', 'password_reset_tokens', 'initialized_credit_users', 'credit_lot_groups', 'credit_reservations', 'credit_reservation_operations', 'credit_operations', 'payment_orders', 'payment_events', 'generation_tasks', 'works', 'provider_configs', 'provider_audit', 'redemption_codes', 'redemption_code_uses', 'user_feedback', 'admin_style_references', 'stored_objects']
   const present = new Set(database.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((row) => row.name))
   const missingTables = requiredTables.filter((name) => !present.has(name))
   const ledgerIssues = []

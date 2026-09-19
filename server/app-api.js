@@ -23,6 +23,7 @@ const statusByCode = {
   INVALID_PROVIDER_RESPONSE: 502,
   PROVIDER_TEST_UNAVAILABLE: 503,
   OVERVIEW_UNAVAILABLE: 503,
+  STORAGE_UNAVAILABLE: 503,
   REDEMPTION_CODE_ALREADY_USED: 409,
   REDEMPTION_CODE_EXHAUSTED: 409,
   REDEMPTION_CODE_EMAIL_MISMATCH: 409,
@@ -90,7 +91,7 @@ function decodeImage(image) {
 }
 
 export class AppApi {
-  constructor({ authService, generationService, creditLedger, paymentService, worksService, adminProviderService, redemptionCodeService, feedbackService = null, adminOverviewService = null, styleService, objectStorage = null, maxJsonBytes = DEFAULT_MAX_JSON_BYTES, secureCookies = false, allowedOrigins = [] } = {}) {
+  constructor({ authService, generationService, creditLedger, paymentService, worksService, adminProviderService, redemptionCodeService, feedbackService = null, adminOverviewService = null, styleService, adminStyleReferenceService = null, objectStorage = null, maxJsonBytes = DEFAULT_MAX_JSON_BYTES, secureCookies = false, allowedOrigins = [] } = {}) {
     if (!authService || !generationService || !creditLedger || !paymentService || !worksService || !adminProviderService || !redemptionCodeService) throw new Error('all application services are required')
     this.authService = authService
     this.generationService = generationService
@@ -102,6 +103,7 @@ export class AppApi {
     this.feedbackService = feedbackService
     this.adminOverviewService = adminOverviewService
     this.styleService = styleService
+    this.adminStyleReferenceService = adminStyleReferenceService
     this.objectStorage = objectStorage
     this.maxJsonBytes = maxJsonBytes
     this.secureCookies = secureCookies
@@ -166,10 +168,10 @@ export class AppApi {
     if (method === 'POST' && pathname === '/api/auth/password-reset/request') return withJsonBody(async (body) => safeResult(await this.authService.requestPasswordReset(body.email)))
     if (method === 'POST' && pathname === '/api/auth/password-reset/confirm') return withJsonBody(async (body) => safeResult(await this.authService.resetPassword(body)))
 
-    if (method === 'POST' && pathname === '/api/generations') return withJsonBody(async (body) => safeResult(await this.generationService.createGeneration({ sessionToken, image: decodeImage(body.image), params: { ...(body.params ?? {}), styleReference: decodeImage(body.params?.styleReference) } }), 202))
+    if (method === 'POST' && pathname === '/api/generations') return withJsonBody(async (body) => safeResult(await this.generationService.createGeneration({ sessionToken, image: decodeImage(body.image), params: { ...(body.params ?? {}) } }), 202))
     const generationMatch = pathname.match(/^\/api\/generations\/([^/]+)$/u)
     const revisionMatch = pathname.match(/^\/api\/generations\/([^/]+)\/revisions$/u)
-    if (method === 'POST' && revisionMatch) return withJsonBody(async (body) => safeResult(await this.generationService.createRevision({ sessionToken, taskId: decodeURIComponent(revisionMatch[1]), prompt: body.prompt, styleReference: decodeImage(body.styleReference) }), 202))
+    if (method === 'POST' && revisionMatch) return withJsonBody(async (body) => safeResult(await this.generationService.createRevision({ sessionToken, taskId: decodeURIComponent(revisionMatch[1]), prompt: body.prompt }), 202))
     if (method === 'GET' && generationMatch) return safeResult(this.generationService.getGeneration({ sessionToken, taskId: decodeURIComponent(generationMatch[1]) }))
     const objectMatch = pathname.match(/^\/api\/objects\/([^/]+)$/u)
     if (method === 'GET' && objectMatch && this.objectStorage) {
@@ -177,7 +179,8 @@ export class AppApi {
       if (!user) return json({ ok: false, code: 'UNAUTHORIZED' }, 401)
       const key = decodeURIComponent(objectMatch[1])
       const metadata = this.objectStorage.metadataFor(key)
-      if (!metadata || metadata.ownerId !== user.id) return json({ ok: false, code: 'NOT_FOUND' }, 404)
+      const isPublicStyleReference = metadata?.metadata?.kind === 'admin-style-reference'
+      if (!metadata || (metadata.ownerId !== user.id && !isPublicStyleReference)) return json({ ok: false, code: 'NOT_FOUND' }, 404)
       const object = await this.objectStorage.get({ key })
       // Object keys are UUID-scoped and immutable, so let returning users reuse
       // yesterday's images instead of downloading them from COS again.
@@ -196,10 +199,17 @@ export class AppApi {
     if (method === 'GET' && pathname === '/api/works') return safeResult(this.worksService.list({ sessionToken }))
     if (method === 'GET' && pathname === '/api/styles') return safeResult(this.styleService.list({ sessionToken }))
     if (method === 'POST' && pathname === '/api/styles') return withJsonBody(async (body) => safeResult(await this.styleService.create({ sessionToken, name: body.name, prompt: body.prompt, image: decodeImage(body.image) }), 201))
+    if (method === 'GET' && pathname === '/api/style-references' && this.adminStyleReferenceService) return safeResult(this.adminStyleReferenceService.listPublic({ sessionToken }))
     const workMatch = pathname.match(/^\/api\/works\/([^/]+)$/u)
     if (method === 'GET' && workMatch) return safeResult(this.worksService.get({ sessionToken, workId: decodeURIComponent(workMatch[1]) }))
 
     if (method === 'GET' && pathname === '/api/admin/providers') return safeResult(this.adminProviderService.list({ sessionToken }))
+    if (method === 'GET' && pathname === '/api/admin/style-references' && this.adminStyleReferenceService) return safeResult(this.adminStyleReferenceService.list({ sessionToken }))
+    if (method === 'POST' && pathname === '/api/admin/style-references' && this.adminStyleReferenceService) return withJsonBody(async (body) => safeResult(await this.adminStyleReferenceService.create({ ...body, image: decodeImage(body.image), sessionToken }), 201))
+    const styleReferenceEnabledMatch = pathname.match(/^\/api\/admin\/style-references\/([^/]+)\/enabled$/u)
+    if (method === 'POST' && styleReferenceEnabledMatch && this.adminStyleReferenceService) return withJsonBody((body) => safeResult(this.adminStyleReferenceService.setEnabled({ sessionToken, referenceId: decodeURIComponent(styleReferenceEnabledMatch[1]), enabled: body.enabled })))
+    const styleReferenceMatch = pathname.match(/^\/api\/admin\/style-references\/([^/]+)$/u)
+    if (method === 'DELETE' && styleReferenceMatch && this.adminStyleReferenceService) return safeResult(this.adminStyleReferenceService.remove({ sessionToken, referenceId: decodeURIComponent(styleReferenceMatch[1]) }))
     if (method === 'GET' && pathname === '/api/admin/overview' && this.adminOverviewService) return safeResult(this.adminOverviewService.get({ sessionToken }))
     if (method === 'GET' && pathname === '/api/admin/redemption-codes') return safeResult(this.redemptionCodeService.list({ sessionToken }))
     if (method === 'POST' && pathname === '/api/admin/redemption-codes') return withJsonBody((body) => safeResult(this.redemptionCodeService.create({ sessionToken, credits: body.credits, maxRedemptions: body.maxRedemptions }), 201))

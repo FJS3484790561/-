@@ -160,6 +160,7 @@ export function createSqliteStores({ filename } = {}) {
     transaction: runTransaction,
   }
   const styles = { styles: new SqliteStyleCollection(database), transaction: runTransaction }
+  const adminStyleReferences = { references: new SqliteJsonMap(database, { table: 'admin_style_references', keyColumn: 'style_reference_id' }), transaction: runTransaction }
   const redemptionCodes = {
     codes: new SqliteJsonMap(database, { table: 'redemption_codes', keyColumn: 'code_digest', extras: { code_id: (value) => value.id } }),
     redemptions: new SqliteJsonMap(database, { table: 'redemption_code_uses', keyColumn: 'redemption_key', extras: { code_id: (value) => value.codeId, user_id: (value) => value.userId } }),
@@ -173,5 +174,5 @@ export function createSqliteStores({ filename } = {}) {
     created_at: (value) => value.createdAt,
     metadata_json: (value) => encode(value.metadata ?? {}),
   } })
-  return { database, auth, credits, payments, generations, works, providers, styles, redemptionCodes, feedback, objects, close: () => database.close() }
+  return { database, auth, credits, payments, generations, works, providers, styles, adminStyleReferences, redemptionCodes, feedback, objects, close: () => database.close() }
 }
