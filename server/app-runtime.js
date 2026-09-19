@@ -181,6 +181,13 @@ function conversationContent(payload) {
   return payload?.choices?.[0]?.message?.content ?? payload?.output?.[0]?.content ?? payload?.content
 }
 
+export function conversationEndpoint(endpoint) {
+  const url = new URL(endpoint)
+  const path = url.pathname.replace(/\/+$/u, '')
+  if (path.endsWith('/v1')) url.pathname = `${path}/chat/completions`
+  return url.toString()
+}
+
 export function configuredConversationProvider({ adminProviderService, fetchImpl = globalThis.fetch, logger = console, timeoutMs = CONVERSATION_TIMEOUT_MS }) {
   return {
     analyze: async ({ image, params, traceId }) => {
@@ -194,7 +201,7 @@ export function configuredConversationProvider({ adminProviderService, fetchImpl
       logger.info?.('[Generation]', { traceId, stage: 'conversation-request', provider: provider.name, model: provider.model, protocol: 'chat-completions' })
       try {
         const request = conversationRequest({ model: provider.model, image, params, apiKey: provider.apiKey, traceId })
-        const response = await fetchImpl(provider.endpoint, { method: 'POST', ...request, signal: AbortSignal.timeout(timeoutMs), redirect: 'error' })
+        const response = await fetchImpl(conversationEndpoint(provider.endpoint), { method: 'POST', ...request, signal: AbortSignal.timeout(timeoutMs), redirect: 'error' })
         logger.info?.('[Generation]', { traceId, stage: 'conversation-response', provider: provider.name, model: provider.model, protocol: 'chat-completions', httpStatus: response.status, elapsedMs: Date.now() - startedAt })
         if (!response.ok) throw diagnosticError('Conversation provider request failed', { code: 'CONVERSATION_HTTP_ERROR', stage: 'response', httpStatus: response.status })
         let payload
@@ -280,7 +287,7 @@ export async function testConfiguredConversationProvider({ endpoint, model, apiK
   const request = conversationRequest({ model, image: { type: 'image/png', data: PROVIDER_TEST_PNG }, params: { room: '客厅', theme: '现代简约', scale: '均衡', userPrompt: '保持结构不变，进行克制的真实室内改造。' }, apiKey, traceId })
   let response
   try {
-    response = await fetchImpl(endpoint, { method: 'POST', ...request, signal: AbortSignal.timeout(timeoutMs), redirect: 'error' })
+    response = await fetchImpl(conversationEndpoint(endpoint), { method: 'POST', ...request, signal: AbortSignal.timeout(timeoutMs), redirect: 'error' })
   } catch (reason) {
     const timeout = reason?.name === 'TimeoutError' || reason?.name === 'AbortError' || reason?.code === 'ABORT_ERR' || reason?.code === 23
     return { ok: false, code: timeout ? 'PROVIDER_TIMEOUT' : 'PROVIDER_REQUEST_FAILED', message: timeout ? `Provider 在 ${Math.round(timeoutMs / 1000)} 秒内未返回结果` : '无法连接 Provider', stage: 'request', protocol: 'chat-completions', elapsedMs: Date.now() - startedAt }

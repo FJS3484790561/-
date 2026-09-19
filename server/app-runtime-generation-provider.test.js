@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { configuredConversationProvider, configuredGenerationProvider, generationPrompt, generationSizeForImage, GENERATION_TIMEOUT_MS, CONVERSATION_TIMEOUT_MS, testConfiguredConversationProvider, testConfiguredProvider } from './app-runtime.js'
+import { configuredConversationProvider, configuredGenerationProvider, conversationEndpoint, generationPrompt, generationSizeForImage, GENERATION_TIMEOUT_MS, CONVERSATION_TIMEOUT_MS, testConfiguredConversationProvider, testConfiguredProvider } from './app-runtime.js'
 import { DEFAULT_PROVIDER_TIMEOUT_MS } from './generation-service.js'
 import { INTERIOR_SOP_SYSTEM_PROMPT } from './sop-prompt.js'
 
@@ -62,6 +62,12 @@ test('conversation provider sends the original room image with the exact SOP and
   assert.equal(body.messages[0].content, INTERIOR_SOP_SYSTEM_PROMPT)
   assert.equal(body.messages[1].content[1].image_url.url, `data:image/jpeg;base64,${Buffer.from('room-photo').toString('base64')}`)
   assert.equal(JSON.stringify(request).includes('chat-secret'), true)
+})
+
+test('normalizes an OpenAI-compatible conversation base URL to Chat Completions', () => {
+  assert.equal(conversationEndpoint('https://chat.example.test/v1'), 'https://chat.example.test/v1/chat/completions')
+  assert.equal(conversationEndpoint('https://chat.example.test/v1/'), 'https://chat.example.test/v1/chat/completions')
+  assert.equal(conversationEndpoint('https://chat.example.test/v1/chat/completions'), 'https://chat.example.test/v1/chat/completions')
 })
 
 test('conversation save gate rejects responses without the required SOP marker', async () => {
