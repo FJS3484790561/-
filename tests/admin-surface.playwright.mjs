@@ -161,7 +161,7 @@ try {
     await page.getByLabel('每人增加点数').fill('8')
     await page.getByLabel('最多兑换人数').fill('3')
     await page.getByRole('button', { name: '生成兑换码' }).click()
-    await page.getByText(/ROOM-[2-9A-HJ-NP-Z]{4}-[2-9A-HJ-NP-Z]{4}-[2-9A-HJ-NP-Z]{4}/).waitFor()
+    await page.locator('.new-code code').filter({ hasText: /ROOM-[2-9A-HJ-NP-Z]{4}-[2-9A-HJ-NP-Z]{4}-[2-9A-HJ-NP-Z]{4}/ }).waitFor()
     await page.getByText('8').last().waitFor()
     const expectedCount = ['desktop', 'mobile', 'minimum-mobile'].indexOf(viewport.name) + 1
     await page.waitForFunction((count) => [...document.querySelectorAll('.overview-stat')].some((card) => card.querySelector('small')?.textContent === '兑换码' && card.querySelector('strong')?.textContent === String(count)), expectedCount)

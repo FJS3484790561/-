@@ -148,6 +148,7 @@ export function createSqliteStores({ filename } = {}) {
   }
   const generations = {
     tasks: new SqliteJsonMap(database, { table: 'generation_tasks', keyColumn: 'task_id', extras: { user_id: (value) => value.userId } }),
+    promptDebugs: new SqliteJsonMap(database, { table: 'generation_prompt_debug', keyColumn: 'debug_id', extras: { created_at: (value) => value.createdAt } }),
     transaction: runTransaction,
   }
   const works = {

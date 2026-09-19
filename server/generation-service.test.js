@@ -121,6 +121,29 @@ test('downloads a remote provider result into protected object storage', async (
   assert.ok(result.timings.resultStoreMs >= result.timings.resultUploadMs)
 })
 
+test('accepts an enabled dynamic theme and records the generated prompt for administrators only', async () => {
+  const store = new MemoryGenerationStore()
+  const authService = new AuthService({ store: new MemoryAuthStore() })
+  await authService.provisionUser({ email: 'user@example.com', password: 'correct-horse' })
+  await authService.provisionUser({ email: 'admin@example.com', password: 'correct-horse' })
+  const user = await authService.login({ email: 'user@example.com', password: 'correct-horse' })
+  const admin = await authService.login({ email: 'admin@example.com', password: 'correct-horse' })
+  const service = new GenerationService({
+    authService,
+    store,
+    providers: new ProviderRegistry({ default: { generate: async () => ({ effectImage: { url: '/result.jpg' }, generationPrompt: '完整图生图提示词' }) } }),
+    themeValidator: (theme) => theme === '暖木客厅',
+    isAdmin: (account) => account.email === 'admin@example.com',
+  })
+  const created = await service.createGeneration({ sessionToken: user.sessionToken, image: { type: 'image/jpeg', data: jpeg }, params: { ...params, theme: '暖木客厅' } })
+  assert.equal(created.ok, true)
+  await service.waitForGeneration(created.task.id)
+  assert.deepEqual(service.listPromptDebug({ sessionToken: user.sessionToken }), { ok: false, code: 'FORBIDDEN' })
+  const debug = service.listPromptDebug({ sessionToken: admin.sessionToken })
+  assert.equal(debug.ok, true)
+  assert.equal(debug.promptDebugs[0].prompt, '完整图生图提示词')
+})
+
 test('rejects private provider result addresses before fetching', async () => {
   let fetches = 0
   const objectStorage = { async put(record) { return { key: record.key, mimeType: record.mimeType } } }

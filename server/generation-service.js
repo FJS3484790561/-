@@ -25,7 +25,7 @@ function matchesImageSignature(type, bytes) {
   return false
 }
 
-function validateRequest({ image, params }, maxImageBytes) {
+function validateRequest({ image, params }, maxImageBytes, themeValidator = null) {
   const fields = {}
   const bytes = imageBytes(image)
   if (!image || !ALLOWED_IMAGE_TYPES.has(image.type)) fields.image = '仅支持 JPEG 或 PNG 图片。'
@@ -33,7 +33,8 @@ function validateRequest({ image, params }, maxImageBytes) {
   else if (bytes.length === 0 || bytes.length > maxImageBytes) fields.image = `图片大小需在 1 字节到 ${maxImageBytes} 字节之间。`
 
   if (!ALLOWED_ROOMS.has(params?.room)) fields.room = '请选择有效的空间类型。'
-  if (!ALLOWED_THEMES.has(params?.theme)) fields.theme = '请选择有效的设计风格。'
+  const theme = typeof params?.theme === 'string' ? params.theme.trim() : ''
+  if ((!themeValidator && !ALLOWED_THEMES.has(theme)) || (themeValidator && (!theme || theme.length > 40 || !themeValidator(theme)))) fields.theme = '请选择有效的设计风格。'
   for (const field of ['userPrompt', 'editPrompt']) {
     if (params?.[field] !== undefined && (typeof params[field] !== 'string' || params[field].length > 2000)) fields[field] = '描述请控制在 2000 字以内。'
   }
@@ -129,6 +130,7 @@ async function pinnedHttpsResponse(url, address, timeoutMs) {
 export class MemoryGenerationStore {
   constructor() {
     this.tasks = new Map()
+    this.promptDebugs = new Map()
   }
 
   transaction(work) {
@@ -151,7 +153,7 @@ export class ProviderRegistry {
 }
 
 export class GenerationService {
-  constructor({ authService, store = new MemoryGenerationStore(), providers = new ProviderRegistry(), providerName = 'default', clock = () => Date.now(), maxImageBytes = DEFAULT_MAX_IMAGE_BYTES, providerTimeoutMs = DEFAULT_PROVIDER_TIMEOUT_MS, creditLedger = null, objectStorage = null, fetchImpl = globalThis.fetch, lookupImpl = lookup, logger = console } = {}) {
+  constructor({ authService, store = new MemoryGenerationStore(), providers = new ProviderRegistry(), providerName = 'default', clock = () => Date.now(), maxImageBytes = DEFAULT_MAX_IMAGE_BYTES, providerTimeoutMs = DEFAULT_PROVIDER_TIMEOUT_MS, creditLedger = null, objectStorage = null, fetchImpl = globalThis.fetch, lookupImpl = lookup, logger = console, themeValidator = null, isAdmin = () => false } = {}) {
     if (!authService) throw new Error('authService is required')
     this.authService = authService
     this.store = store
@@ -165,6 +167,8 @@ export class GenerationService {
     this.fetchImpl = fetchImpl
     this.lookupImpl = lookupImpl
     this.logger = logger
+    this.themeValidator = themeValidator
+    this.isAdmin = isAdmin
   }
 
   async createRevision({ sessionToken, taskId, prompt }) {
@@ -204,7 +208,7 @@ export class GenerationService {
   #create({ sessionToken, image, params }, parent = null) {
     const user = this.authService.getSession(sessionToken)
     if (!user) return Promise.resolve(error('UNAUTHORIZED'))
-    const validation = validateRequest({ image, params }, this.maxImageBytes)
+    const validation = validateRequest({ image, params }, this.maxImageBytes, this.themeValidator)
     if (validation) return Promise.resolve(validation)
     const id = `generation_${randomUUID()}`
     const dimensions = Number.isFinite(image.width) && Number.isFinite(image.height) ? { width: image.width, height: image.height } : {}
@@ -240,6 +244,13 @@ export class GenerationService {
     const task = this.store.tasks.get(taskId)
     if (!task || task.userId !== user.id) return error('NOT_FOUND')
     return { ok: true, task: this.#publicTask(task) }
+  }
+
+  listPromptDebug({ sessionToken, limit = 50 }) {
+    const user = this.authService.getSession(sessionToken)
+    if (!user || !this.isAdmin(user)) return error(user ? 'FORBIDDEN' : 'UNAUTHORIZED')
+    const entries = [...this.store.promptDebugs.values()].sort((a, b) => b.createdAt - a.createdAt).slice(0, Math.max(1, Math.min(200, Number(limit) || 50)))
+    return { ok: true, promptDebugs: entries }
   }
 
   async waitForGeneration(taskId) {
@@ -281,6 +292,11 @@ export class GenerationService {
       task.timings.providerCallMs = Date.now() - providerStartedAt
       task.timings.providerMs = Number.isFinite(output?.timings?.providerMs) ? output.timings.providerMs : task.timings.providerCallMs
       if (!output?.effectImage?.url) throw { code: 'INVALID_PROVIDER_RESPONSE' }
+      if (output.generationPrompt && this.store.promptDebugs) {
+        const debugId = `prompt_debug_${randomUUID()}`
+        this.store.promptDebugs.set(debugId, { id: debugId, generationId: task.id, traceId: task.traceId, createdAt: this.clock(), room: task.params.room, theme: task.params.theme, prompt: output.generationPrompt })
+        this.logger.info?.('[Generation]', { traceId: task.traceId, stage: 'prompt-generated' })
+      }
       let effectImage = { url: String(output.effectImage.url), mimeType: output.effectImage.mimeType ?? 'image/jpeg' }
       if (this.objectStorage) {
         const resultStoreStartedAt = Date.now()

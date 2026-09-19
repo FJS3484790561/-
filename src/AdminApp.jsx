@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Activity, AlertTriangle, BarChart3, Check, CheckCircle2, Copy, Database, ImagePlus, KeyRound, LogOut, MessageSquare, Pencil, Plus, RefreshCw, ServerCog, ShieldCheck, Ticket, Trash2, Users, X, XCircle } from 'lucide-react'
+import { Activity, AlertTriangle, ArrowDown, ArrowUp, BarChart3, Check, CheckCircle2, Copy, Database, ImagePlus, KeyRound, LogOut, MessageSquare, Pencil, Plus, RefreshCw, ServerCog, ShieldCheck, Ticket, Trash2, Users, X, XCircle } from 'lucide-react'
 import { adminApi, ApiError } from './admin-api'
 
 const blank = { name: '', endpoint: '', model: '' }
@@ -24,6 +24,7 @@ const copy = {
   FEEDBACK_ALREADY_ACCEPTED: '这条反馈已经采纳。',
   FEEDBACK_NOT_REJECTED: '只有标记为不采纳后才能删除反馈。',
   MAIL_UNAVAILABLE: '邮件发送失败，请检查发信配置后重试。',
+  STYLE_ALREADY_EXISTS: '这个风格已经存在，请换一个名称。',
 }
 const messageFor = (error, fallback = '操作未完成，请稍后重试。') => error instanceof TypeError ? '无法连接本地服务，请确认 API 已启动。' : copy[error?.code] || fallback
 const formatTime = (value) => new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
@@ -200,6 +201,7 @@ function StyleReferenceLibrary({ initialReferences }) {
   const [items, setItems] = useState(initialReferences)
   const [values, setValues] = useState({ name: '', theme: '', description: '' })
   const [image, setImage] = useState(null)
+  const [editing, setEditing] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   async function submit(event) {
@@ -217,8 +219,19 @@ function StyleReferenceLibrary({ initialReferences }) {
     try { const result = await adminApi.setStyleReferenceEnabled(item.id, !item.enabled); setItems((current) => current.map((entry) => entry.id === item.id ? result.styleReference : entry)) } catch (reason) { setError(messageFor(reason, '状态更新失败，请重试。')) }
   }
   async function remove(item) {
-    if (!window.confirm('确定停用这张风格参考图吗？')) return
-    try { const result = await adminApi.removeStyleReference(item.id); setItems((current) => current.map((entry) => entry.id === item.id ? result.styleReference : entry)) } catch (reason) { setError(messageFor(reason, '停用失败，请重试。')) }
+    if (!window.confirm('确定删除这张风格参考图吗？')) return
+    try { await adminApi.removeStyleReference(item.id); setItems((current) => current.filter((entry) => entry.id !== item.id)) } catch (reason) { setError(messageFor(reason, '删除失败，请重试。')) }
+  }
+  async function move(item, direction) {
+    const index = items.findIndex((entry) => entry.id === item.id); const nextIndex = index + direction
+    if (nextIndex < 0 || nextIndex >= items.length) return
+    const previous = items; const next = [...items]; [next[index], next[nextIndex]] = [next[nextIndex], next[index]]
+    setItems(next)
+    try { const result = await adminApi.reorderStyleReferences(next.map((entry) => entry.id)); setItems(result.styleReferences) } catch (reason) { setItems(previous); setError(messageFor(reason, '排序保存失败，请重试。')) }
+  }
+  async function saveEdit(event) {
+    event.preventDefault(); setError(''); setBusy(true)
+    try { const result = await adminApi.updateStyleReference(editing.id, { name: editing.name.trim(), theme: editing.theme.trim(), description: editing.description.trim(), ...(editing.image ? { image: await readImagePayload(editing.image) } : {}) }); setItems((current) => current.map((entry) => entry.id === editing.id ? result.styleReference : entry)); setEditing(null) } catch (reason) { setError(messageFor(reason, '风格保存失败，请重试。')) } finally { setBusy(false) }
   }
   return <section className="provider-section style-reference-section">
     <header className="section-heading"><div><h2><ImagePlus size={19} />设计风格参考图</h2><p>仅供用户浏览，不会进入对话分析或图像生成请求。</p></div></header>
@@ -230,8 +243,15 @@ function StyleReferenceLibrary({ initialReferences }) {
       {error && <Alert kind="error">{error}</Alert>}
       <button className="primary-button compact" type="submit" disabled={busy}>{busy ? <RefreshCw className="spin" size={17} /> : <Plus size={17} />}{busy ? '上传中' : '上传参考图'}</button>
     </form>
-    {!items.length ? <div className="empty-mini">还没有上传风格参考图</div> : <div className="style-reference-grid">{items.map((item) => <article className={item.enabled ? 'style-reference-card' : 'style-reference-card is-disabled'} key={item.id}><img src={item.image.url} alt="" /><div><strong>{item.name}</strong><small>{item.theme}{item.description ? ` · ${item.description}` : ''}</small></div><div className="style-reference-actions"><button className="text-button" type="button" onClick={() => toggle(item)}>{item.enabled ? '停用' : '启用'}</button>{item.enabled && <button className="text-button danger-text" type="button" onClick={() => remove(item)}><Trash2 size={15} />删除</button>}</div></article>)}</div>}
+    {!items.length ? <div className="empty-mini">还没有上传风格参考图</div> : <div className="style-reference-list">{items.map((item, index) => <article className={item.enabled ? 'style-reference-row' : 'style-reference-row is-disabled'} key={item.id}><img src={item.image.url} alt="" /><div className="style-reference-copy"><strong>{item.name}</strong><small>{item.theme}{item.description ? ` · ${item.description}` : ''}</small></div><div className="style-reference-actions"><button className="icon-button" type="button" onClick={() => move(item, -1)} disabled={index === 0} aria-label="上移"><ArrowUp size={16} /></button><button className="icon-button" type="button" onClick={() => move(item, 1)} disabled={index === items.length - 1} aria-label="下移"><ArrowDown size={16} /></button><button className="text-button" type="button" onClick={() => setEditing({ ...item, image: null })}><Pencil size={15} />编辑</button><button className="text-button" type="button" onClick={() => toggle(item)}>{item.enabled ? '停用' : '启用'}</button><button className="text-button danger-text" type="button" onClick={() => remove(item)}><Trash2 size={15} />删除</button></div></article>)}</div>}
+    {editing && <div className="backdrop" onMouseDown={(event) => event.target === event.currentTarget && !busy && setEditing(null)}><section className="dialog" role="dialog" aria-modal="true"><header className="dialog-header"><div><span className="kicker">风格管理</span><h2>编辑风格</h2></div><button className="icon-button" type="button" onClick={() => setEditing(null)} aria-label="关闭"><X size={18} /></button></header><form className="auth-form" onSubmit={saveEdit}><label><span>名称</span><input value={editing.name} onChange={(event) => setEditing({ ...editing, name: event.target.value })} /></label><label><span>对应风格</span><input value={editing.theme} onChange={(event) => setEditing({ ...editing, theme: event.target.value })} /></label><label><span>说明</span><input value={editing.description} onChange={(event) => setEditing({ ...editing, description: event.target.value })} /></label><label className="file-input"><span>替换参考图（可选）</span><input type="file" accept="image/jpeg,image/png" onChange={(event) => setEditing({ ...editing, image: event.target.files?.[0] ?? null })} /></label><div className="dialog-actions"><button className="secondary-button" type="button" onClick={() => setEditing(null)}>取消</button><button className="primary-button" type="submit" disabled={busy}>{busy ? '保存中' : '保存修改'}</button></div></form></section></div>}
   </section>
+}
+
+function PromptDebug({ initialItems = [] }) {
+  const [items, setItems] = useState(initialItems); const [loading, setLoading] = useState(false)
+  async function refresh() { setLoading(true); try { const result = await adminApi.listGenerationDebug(); setItems(result.promptDebugs) } finally { setLoading(false) } }
+  return <section className="provider-section prompt-debug-section"><header className="section-heading"><div><h2><MessageSquare size={19} />图生图提示词调试</h2><p>查看最近一次对话 Provider 生成并交给图像 Provider 的完整提示词。</p></div><button className="icon-button" type="button" onClick={refresh} disabled={loading} aria-label="刷新提示词"><RefreshCw className={loading ? 'spin' : ''} size={18} /></button></header>{!items.length ? <div className="empty-mini">还没有生成提示词</div> : <div className="prompt-debug-list">{items.map((item) => <article key={item.id}><div><strong>{item.room} · {item.theme}</strong><small>{formatTime(item.createdAt)} · {item.traceId}</small></div><pre>{item.prompt}</pre></article>)}</div>}</section>
 }
 
 function RedemptionCodes({ codes, onCreated, onDeleted }) {
@@ -298,7 +318,7 @@ function FeedbackList({ initialFeedback }) {
   return <section className="provider-section feedback-section"><header className="section-heading"><div><h2><MessageSquare size={19} />用户反馈</h2><p>采纳后按你输入的点数发送一次性兑换码；邮件失败可安全重试。</p></div></header>{error && <Alert kind="error">{error}</Alert>}{!items.length ? <div className="empty-mini">暂无用户反馈</div> : <div className="feedback-list">{items.map((item) => <article className={`feedback-row status-${item.status}`} key={item.id}><div className="feedback-content"><div className="feedback-meta"><strong>{item.email}</strong><span className="badge">{item.status === 'pending' ? '待处理' : item.status === 'accepted' ? '已采纳' : '不采纳'}</span><small>{formatTime(item.createdAt)}</small></div><p>{item.message}</p>{item.mailStatus === 'failed' && <small className="inline-error">上次发信失败，可再次点击采纳重试</small>}</div><div className="feedback-actions">{item.status !== 'accepted' && <button className="text-button accept-text" type="button" disabled={busyId === item.id} onClick={() => decide(item, 'accept')}><Check size={16} />采纳</button>}{item.status === 'pending' && <button className="text-button danger-text" type="button" disabled={busyId === item.id} onClick={() => decide(item, 'reject')}><XCircle size={16} />不采纳</button>}{item.status === 'rejected' && <button className="text-button danger-text" type="button" disabled={busyId === item.id} onClick={() => remove(item)}><Trash2 size={16} />删除</button>}</div></article>)}</div>}</section>
 }
 
-function Console({ user, initialProviders, initialRedemptionCodes, initialFeedback, initialStyleReferences, onLogout }) {
+function Console({ user, initialProviders, initialRedemptionCodes, initialFeedback, initialStyleReferences, initialPromptDebugs, onLogout }) {
   const [providers, setProviders] = useState(initialProviders)
   const [redemptionCodes, setRedemptionCodes] = useState(initialRedemptionCodes)
   const [dialog, setDialog] = useState(null)
@@ -339,6 +359,7 @@ function Console({ user, initialProviders, initialRedemptionCodes, initialFeedba
     <RedemptionCodes codes={redemptionCodes} onCreated={(code) => setRedemptionCodes((current) => [code, ...current])} onDeleted={(deleted) => setRedemptionCodes((current) => deleted.deletedAt ? current.map((item) => item.id === deleted.id ? deleted : item) : current.filter((item) => item.id !== deleted.id))} />
     <FeedbackList initialFeedback={initialFeedback} />
     <StyleReferenceLibrary initialReferences={initialStyleReferences} />
+    <PromptDebug initialItems={initialPromptDebugs} />
     <footer><span><ShieldCheck size={15} />权限、密钥与兑换码由服务器端保护</span><span>敏感值不会回填到页面</span></footer>
     {dialog?.type === 'form' && <ProviderForm provider={dialog.provider} onClose={() => setDialog(null)} onSaved={saved} />}
     {dialog?.type === 'audit' && <Audit provider={dialog.provider} onClose={() => setDialog(null)} />}
@@ -349,8 +370,8 @@ function App() {
   const [state, setState] = useState({ view: 'loading' })
   async function establish(user) {
     try {
-      const [providers, redemptionCodes, feedback, styleReferences] = await Promise.all([adminApi.listProviders(), adminApi.listRedemptionCodes(), adminApi.listFeedback(), adminApi.listStyleReferences()])
-      setState({ view: 'console', user, providers: providers.providers, redemptionCodes: redemptionCodes.redemptionCodes, feedback: feedback.feedback, styleReferences: styleReferences.styleReferences })
+      const [providers, redemptionCodes, feedback, styleReferences, promptDebug] = await Promise.all([adminApi.listProviders(), adminApi.listRedemptionCodes(), adminApi.listFeedback(), adminApi.listStyleReferences(), adminApi.listGenerationDebug()])
+      setState({ view: 'console', user, providers: providers.providers, redemptionCodes: redemptionCodes.redemptionCodes, feedback: feedback.feedback, styleReferences: styleReferences.styleReferences, promptDebugs: promptDebug.promptDebugs })
     } catch (error) {
       setState(error.status === 403 ? { view: 'forbidden', user } : { view: 'login' })
     }
@@ -365,7 +386,7 @@ function App() {
   }
   if (state.view === 'loading') return <main className="loading-screen" role="status"><RefreshCw className="spin" size={22} />正在恢复管理员会话</main>
   if (state.view === 'forbidden') return <Forbidden email={state.user.email} onLogout={logout} />
-  if (state.view === 'console') return <Console user={state.user} initialProviders={state.providers} initialRedemptionCodes={state.redemptionCodes} initialFeedback={state.feedback} initialStyleReferences={state.styleReferences} onLogout={logout} />
+  if (state.view === 'console') return <Console user={state.user} initialProviders={state.providers} initialRedemptionCodes={state.redemptionCodes} initialFeedback={state.feedback} initialStyleReferences={state.styleReferences} initialPromptDebugs={state.promptDebugs} onLogout={logout} />
   return <Login onAuthenticated={establish} />
 }
 

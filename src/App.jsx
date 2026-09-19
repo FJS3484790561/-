@@ -349,8 +349,9 @@ function GenerationProgress({ elapsedMs }) {
 }
 
 function ThemePicker({ value, onChange, styleReferences = [] }) {
+  const availableThemes = styleReferences.length ? styleReferences.map((reference) => ({ name: reference.theme, description: reference.description || reference.name })).filter((theme, index, list) => list.findIndex((entry) => entry.name === theme.name) === index) : themes
   return <div className="field"><span>设计风格 · 仅作文字方向</span><div className="theme-picker" role="radiogroup" aria-label="设计风格">
-    {themes.map((theme) => <button key={theme.name} type="button" className={`theme-card ${value === theme.name ? "selected" : ""}`} aria-pressed={value === theme.name} onClick={() => onChange(theme.name)}>
+    {availableThemes.map((theme) => <button key={theme.name} type="button" className={`theme-card ${value === theme.name ? "selected" : ""}`} aria-pressed={value === theme.name} onClick={() => onChange(theme.name)}>
       {styleReferences.find((reference) => reference.theme === theme.name)?.image?.url ? <span className="theme-art"><img src={styleReferences.find((reference) => reference.theme === theme.name).image.url} alt="" /></span> : <span className="theme-art theme-art-empty" aria-hidden="true" />} <strong>{theme.name}</strong><small>{theme.description}</small>
     </button>)}
   </div></div>

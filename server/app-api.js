@@ -15,6 +15,7 @@ const statusByCode = {
   PROVIDER_NOT_AVAILABLE: 404,
   EMAIL_ALREADY_REGISTERED: 409,
   PROVIDER_ALREADY_EXISTS: 409,
+  STYLE_ALREADY_EXISTS: 409,
   INSUFFICIENT_CREDITS: 409,
   PAYMENT_PROVIDER_UNAVAILABLE: 503,
   PROVIDER_UNAVAILABLE: 503,
@@ -209,7 +210,10 @@ export class AppApi {
     const styleReferenceEnabledMatch = pathname.match(/^\/api\/admin\/style-references\/([^/]+)\/enabled$/u)
     if (method === 'POST' && styleReferenceEnabledMatch && this.adminStyleReferenceService) return withJsonBody((body) => safeResult(this.adminStyleReferenceService.setEnabled({ sessionToken, referenceId: decodeURIComponent(styleReferenceEnabledMatch[1]), enabled: body.enabled })))
     const styleReferenceMatch = pathname.match(/^\/api\/admin\/style-references\/([^/]+)$/u)
+    if (method === 'PATCH' && styleReferenceMatch && this.adminStyleReferenceService) return withJsonBody(async (body) => safeResult(await this.adminStyleReferenceService.update({ ...body, image: decodeImage(body.image), sessionToken, referenceId: decodeURIComponent(styleReferenceMatch[1]) })))
     if (method === 'DELETE' && styleReferenceMatch && this.adminStyleReferenceService) return safeResult(this.adminStyleReferenceService.remove({ sessionToken, referenceId: decodeURIComponent(styleReferenceMatch[1]) }))
+    if (method === 'POST' && pathname === '/api/admin/style-references/reorder' && this.adminStyleReferenceService) return withJsonBody((body) => safeResult(this.adminStyleReferenceService.reorder({ sessionToken, referenceIds: body.referenceIds })))
+    if (method === 'GET' && pathname === '/api/admin/generation-debug') return safeResult(this.generationService.listPromptDebug({ sessionToken }))
     if (method === 'GET' && pathname === '/api/admin/overview' && this.adminOverviewService) return safeResult(this.adminOverviewService.get({ sessionToken }))
     if (method === 'GET' && pathname === '/api/admin/redemption-codes') return safeResult(this.redemptionCodeService.list({ sessionToken }))
     if (method === 'POST' && pathname === '/api/admin/redemption-codes') return withJsonBody((body) => safeResult(this.redemptionCodeService.create({ sessionToken, credits: body.credits, maxRedemptions: body.maxRedemptions }), 201))

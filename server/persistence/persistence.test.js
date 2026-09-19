@@ -109,6 +109,7 @@ test('persists accounts, sessions, credits, orders, generations, works, provider
   const redemptionCode = runtime.redemptionCodeService.create({ sessionToken: adminLogin.sessionToken, credits: 6, maxRedemptions: 2 })
   assert.equal(redemptionCode.ok, true)
   assert.equal(runtime.redemptionCodeService.redeem({ sessionToken: userLogin.sessionToken, code: redemptionCode.code }).available, 20)
+  stores.generations.promptDebugs.set('prompt_debug_1', { id: 'prompt_debug_1', generationId: generation.task.id, traceId: generation.task.id, createdAt: 123, room: '客厅', theme: '现代简约', prompt: '完整图生图提示词' })
   runtime.close()
 
   stores = createSqliteStores({ filename })
@@ -123,6 +124,7 @@ test('persists accounts, sessions, credits, orders, generations, works, provider
   assert.equal(reopenedCode.redeemedCount, 1)
   assert.equal(reopenedCode.code, redemptionCode.code)
   assert.equal(runtime.redemptionCodeService.redeem({ sessionToken: userLogin.sessionToken, code: redemptionCode.code }).code, 'REDEMPTION_CODE_ALREADY_USED')
+  assert.equal(runtime.generationService.listPromptDebug({ sessionToken: adminLogin.sessionToken }).promptDebugs[0].prompt, '完整图生图提示词')
   runtime.close()
 })
 
@@ -313,7 +315,7 @@ test('reapplying migrations is idempotent and preserves the credit journal', asy
   runtime.close()
   for (let attempt = 0; attempt < 2; attempt += 1) {
     stores = createSqliteStores({ filename })
-    assert.deepEqual(stores.database.prepare('SELECT version FROM schema_migrations ORDER BY version').all().map((row) => row.version), [1, 2, 3, 4, 5, 6, 7])
+    assert.deepEqual(stores.database.prepare('SELECT version FROM schema_migrations ORDER BY version').all().map((row) => row.version), [1, 2, 3, 4, 5, 6, 7, 8])
     assert.equal(stores.database.prepare('SELECT COUNT(*) AS count FROM credit_operations').get().count, 1)
     assert.equal(verifySqliteDatabase(stores.database).ok, true)
     stores.close()
@@ -336,7 +338,7 @@ test('upgrades a populated v1 credit database and backfills its journal', async 
   v1.close()
 
   const upgraded = openSqliteDatabase({ filename })
-  assert.deepEqual(upgraded.prepare('SELECT version FROM schema_migrations ORDER BY version').all().map((row) => row.version), [1, 2, 3, 4, 5, 6, 7])
+  assert.deepEqual(upgraded.prepare('SELECT version FROM schema_migrations ORDER BY version').all().map((row) => row.version), [1, 2, 3, 4, 5, 6, 7, 8])
   assert.deepEqual(upgraded.prepare('SELECT operation_type FROM credit_operations ORDER BY occurred_at').all().map((row) => row.operation_type), ['grant', 'reserve', 'settle'])
   assert.equal(upgraded.prepare('SELECT COUNT(*) AS count FROM credit_reservation_operations').get().count, 1)
   assert.equal(verifySqliteDatabase(upgraded).ok, true)
