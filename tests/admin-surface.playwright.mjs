@@ -125,7 +125,7 @@ try {
       await page.getByLabel('API 密钥').fill(randomBytes(24).toString('base64url'))
       await page.getByRole('button', { name: '测试并保存' }).click()
       await page.getByText('该 Provider 名称已存在。').waitFor()
-      if (await page.getByLabel('API 密钥').inputValue()) throw new Error('Provider key was not cleared after a conflict')
+      if (!await page.getByLabel('API 密钥').inputValue()) throw new Error('Provider key was cleared after a conflict')
       await page.getByRole('button', { name: '关闭表单' }).click()
 
       await page.route('**/api/admin/providers/test', async (route) => route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ ok: false, code: 'INTERNAL_ERROR' }) }), { times: 1 })
@@ -136,7 +136,7 @@ try {
       await page.getByLabel('API 密钥').fill(randomBytes(24).toString('base64url'))
       await page.getByRole('button', { name: '测试并保存' }).click()
       await page.getByText('服务暂时不可用，请稍后重试。').waitFor()
-      if (await page.getByLabel('API 密钥').inputValue()) throw new Error('Provider key was not cleared after a service error')
+      if (!await page.getByLabel('API 密钥').inputValue()) throw new Error('Provider key was cleared after a service error')
       await page.getByRole('button', { name: '关闭表单' }).click()
     }
 

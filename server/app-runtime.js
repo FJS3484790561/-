@@ -1,4 +1,6 @@
 import { randomBytes } from 'node:crypto'
+import { isAimax, runAimax } from './aimax-provider.js'
+import { readFile } from 'node:fs/promises'
 import { AdminProviderService, MemoryAdminProviderStore } from './admin-provider-service.js'
 import { AdminOverviewService } from './admin-overview-service.js'
 import { AppApi } from './app-api.js'
@@ -220,7 +222,11 @@ export function configuredConversationProvider({ adminProviderService, fetchImpl
 
 export function configuredGenerationProvider({ adminProviderService, fallback, conversationProvider, fetchImpl = globalThis.fetch, logger = console, timeoutMs = GENERATION_TIMEOUT_MS }) {
   return {
-    generate: async ({ image, params, traceId }) => {
+    needsReferenceUrl: () => {
+      const configured = adminProviderService.getEnabledConfig('image')
+      return configured.ok && isAimax(configured.provider.endpoint, configured.provider.model)
+    },
+    generate: async ({ image, params, traceId, referenceImageUrl }) => {
       const configured = adminProviderService.getEnabledConfig('image')
       if (!configured.ok) return fallback.generate({ image, params, traceId })
       const provider = configured.provider
@@ -229,6 +235,10 @@ export function configuredGenerationProvider({ adminProviderService, fallback, c
       try {
         if (!conversationProvider) throw diagnosticError('Conversation provider is unavailable', { code: 'CONVERSATION_PROVIDER_UNAVAILABLE', stage: 'configuration' })
         const analysis = await conversationProvider.analyze({ image, params, traceId })
+        if (isAimax(provider.endpoint, provider.model)) {
+          const result = await runAimax({ ...provider, traceId, imageUrl: referenceImageUrl, prompt: analysis.prompt, fetchImpl, timeoutMs })
+          return { effectImage: { url: result.url, mimeType: 'image/png' }, generationPrompt: analysis.prompt, timings: { providerMs: Date.now() - startedAt, conversationMs: analysis.providerMs } }
+        }
         logger.info?.('[Generation]', { traceId, stage: 'image-request', provider: provider.name, model: provider.model, protocol, conversationMs: analysis.providerMs })
         const request = imageProviderRequest({ endpoint: provider.endpoint, model: provider.model, image, prompt: analysis.prompt, apiKey: provider.apiKey, traceId })
         const response = await fetchImpl(provider.endpoint, {
@@ -302,9 +312,24 @@ export async function testConfiguredConversationProvider({ endpoint, model, apiK
   return { ok: true, httpStatus: response.status, protocol: 'chat-completions', elapsedMs: Date.now() - startedAt }
 }
 
-export async function testConfiguredProvider({ endpoint, model, apiKey, traceId, kind = 'image', fetchImpl = globalThis.fetch, timeoutMs = PROVIDER_TEST_TIMEOUT_MS }) {
+export async function testConfiguredProvider({ endpoint, model, apiKey, traceId, kind = 'image', fetchImpl = globalThis.fetch, timeoutMs = PROVIDER_TEST_TIMEOUT_MS, objectStorage = null, pollMs = 2000 }) {
   if (kind === 'conversation') return testConfiguredConversationProvider({ endpoint, model, apiKey, traceId, fetchImpl, timeoutMs })
   const startedAt = Date.now()
+  if (isAimax(endpoint, model)) {
+    const protocol = 'aimax-async-reference-image'
+    try {
+      if (!objectStorage?.signedReadUrl) throw diagnosticError('AImAX 测试需要支持限时 HTTPS 链接的图片存储。', { code: 'REFERENCE_IMAGE_UNAVAILABLE', stage: 'reference' })
+      const key = 'provider-tests/' + randomBytes(16).toString('hex') + '.jpg'
+      const fixtureImage = await readFile(new URL('../src/assets/upload-good.jpg', import.meta.url))
+      await objectStorage.put({ key, body: fixtureImage, mimeType: 'image/jpeg', metadata: { kind: 'provider-test' } })
+      const imageUrl = await objectStorage.signedReadUrl({ key, expires: 600 })
+      const result = await runAimax({ endpoint, model, apiKey, traceId, imageUrl, prompt: '保留参考图构图，生成自然材质和柔和光线的室内设计图片。', fetchImpl, timeoutMs, pollMs })
+      if (!await validProviderTestImage(result.url, fetchImpl)) throw diagnosticError('AImAX 返回的结果无法验证为图片。', { code: 'INVALID_PROVIDER_RESPONSE', stage: 'validation' })
+      return { ok: true, httpStatus: 200, protocol, elapsedMs: Date.now() - startedAt }
+    } catch (reason) {
+      return { ok: false, code: reason.code || 'PROVIDER_TEST_FAILED', message: reason.stage ? reason.message : 'AImAX 测试未完成，请检查图片存储与网络。', stage: reason.stage || 'reference', ...(reason.httpStatus ? { httpStatus: reason.httpStatus } : {}), protocol, elapsedMs: Date.now() - startedAt }
+    }
+  }
   const protocol = providerProtocol(endpoint, kind)
   const request = imageProviderRequest({
     endpoint,
@@ -351,7 +376,7 @@ export function createAppRuntime({ mailer, paymentProvider = localPaymentProvide
   const isAdmin = (user) => user.email === normalizedAdminEmail
   const redemptionCodeService = new RedemptionCodeService({ authService, creditLedger, store: stores.redemptionCodes ?? new MemoryRedemptionCodeStore(), isAdmin, encryptionKey })
   const feedbackService = new FeedbackService({ authService, redemptionCodeService, mailer, store: stores.feedback ?? new MemoryFeedbackStore(), isAdmin, logger })
-  const testProvider = providerTester ?? ((config) => testConfiguredProvider({ ...config, fetchImpl }))
+  const testProvider = providerTester ?? ((config) => testConfiguredProvider({ ...config, fetchImpl, objectStorage, ...(isAimax(config.endpoint, config.model) ? { timeoutMs: GENERATION_TIMEOUT_MS } : {}) }))
   const adminProviderService = new AdminProviderService({ authService, store: stores.providers ?? new MemoryAdminProviderStore(), encryptionKey, isAdmin, testProvider, logger })
   const adminOverviewService = new AdminOverviewService({ database: stores.database, authService, isAdmin })
   const conversationProvider = configuredConversationProvider({ adminProviderService, fetchImpl, logger })

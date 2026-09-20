@@ -41,6 +41,18 @@ export class LocalObjectStorage {
 }
 
 export class TencentCosObjectStorage {
+  async signedReadUrl({ key, expires = 600 }) {
+    const objectKey = safeObjectKey(key)
+    if (!this.metadataFor(objectKey)) throw new Error('Object not found')
+    return new Promise((resolve, reject) => {
+      this.client.getObjectUrl({ Bucket: this.bucket, Region: this.region, Key: objectKey, Sign: true, Protocol: 'https:', Expires: Math.min(900, Math.max(60, expires)) }, (error, result) => {
+        if (error) reject(new Error('Unable to sign object URL'))
+        else if (!result?.Url?.startsWith('https://')) reject(new Error('Invalid signed object URL'))
+        else resolve(result.Url)
+      })
+    })
+  }
+
   constructor({ secretId, secretKey, bucket, region, metadata, clock = () => Date.now(), client } = {}) {
     if (!bucket || !region || (!client && (!secretId || !secretKey))) throw new Error('Tencent COS credentials, bucket and region are required')
     this.client = client ?? new COS({ SecretId: secretId, SecretKey: secretKey })

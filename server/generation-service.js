@@ -285,7 +285,7 @@ export class GenerationService {
       }
       providerStartedAt = Date.now()
       const output = await Promise.race([
-        provider.generate({ image, params: { ...task.params }, traceId: task.traceId }),
+        provider.generate({ image, params: { ...task.params }, traceId: task.traceId, referenceImageUrl: provider.needsReferenceUrl?.() && task.input.objectKey && this.objectStorage?.signedReadUrl ? await this.objectStorage.signedReadUrl({ key: task.input.objectKey, expires: 600 }) : undefined }),
         new Promise((_, reject) => { timeoutId = setTimeout(() => reject({ code: 'PROVIDER_TIMEOUT' }), this.providerTimeoutMs) }),
       ])
       clearTimeout(timeoutId)

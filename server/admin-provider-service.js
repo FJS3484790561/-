@@ -66,6 +66,30 @@ export class AdminProviderService {
     this.clock = clock
     this.testProvider = testProvider
     this.logger = logger
+    this.testJobs = new Map()
+  }
+
+  startTest(input) {
+    const access = this.#authorize(input.sessionToken)
+    if (!access.ok) return access
+    for (const [id, job] of this.testJobs) if (job.expiresAt < this.clock()) this.testJobs.delete(id)
+    if ([...this.testJobs.values()].some((job) => job.userId === access.user.id && job.status === 'running')) return { ok: false, code: 'PROVIDER_TEST_BUSY' }
+    const testId = 'provider_job_' + randomUUID()
+    const job = { userId: access.user.id, status: 'running', expiresAt: this.clock() + 15 * 60_000 }
+    this.testJobs.set(testId, job)
+    // Credentials live only in this call; polling records contain safe results only.
+    this.testAndSave(input).then((result) => { job.result = result; job.status = 'completed' }).catch(() => {
+      job.result = { ok: false, code: 'PROVIDER_TEST_FAILED', message: 'Provider 测试未完成。' }; job.status = 'completed'
+    })
+    return { ok: true, testId, status: 'running' }
+  }
+
+  getTest({ sessionToken, testId }) {
+    const access = this.#authorize(sessionToken)
+    if (!access.ok) return access
+    const job = this.testJobs.get(testId)
+    if (!job || job.userId !== access.user.id || job.expiresAt < this.clock()) return { ok: false, code: 'NOT_FOUND' }
+    return { ok: true, testId, status: job.status, ...(job.status === 'completed' ? { result: job.result } : {}) }
   }
 
   list({ sessionToken }) {

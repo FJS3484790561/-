@@ -26,7 +26,7 @@ const copy = {
   MAIL_UNAVAILABLE: '邮件发送失败，请检查发信配置后重试。',
   STYLE_ALREADY_EXISTS: '这个风格已经存在，请换一个名称。',
 }
-const messageFor = (error, fallback = '操作未完成，请稍后重试。') => error instanceof TypeError ? '无法连接本地服务，请确认 API 已启动。' : error?.upstreamMessage || error?.message || copy[error?.code] || fallback
+const messageFor = (error, fallback = '操作未完成，请稍后重试。') => error instanceof TypeError ? '无法连接服务，请稍后重试。' : error?.serverMessage || copy[error?.code] || fallback
 const formatTime = (value) => new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
 const formatBytes = (bytes) => bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`
 function readImagePayload(file) {
@@ -170,6 +170,7 @@ function ProviderForm({ provider, onClose, onSaved }) {
       <label><span>Provider 类型</span><select value={values.kind} onChange={(event) => setValues({ ...values, kind: event.target.value })}><option value="image">图像生成</option><option value="conversation">对话分析</option></select></label>
       {field('endpoint', values.kind === 'conversation' ? '对话 API 端点' : '图片编辑 API 端点', values.kind === 'conversation' ? 'https://provider.example/v1/chat/completions' : 'https://provider.example/v1/images/edits')}{field('model', values.kind === 'conversation' ? '对话模型' : '图片编辑模型', values.kind === 'conversation' ? 'gpt-4o' : 'image-edit-v1')}
       <p className="form-help">对话 Provider 必须兼容 Chat Completions，并能读取图片；图像 Provider 只接收原始房间图和对话阶段生成的提示词。</p>
+      {values.kind === 'image' && values.model.trim() === 'gpt-image-2.5' && <p className="form-help">AImAX 请填写 https://api.aimaxa.cn/v1/images/generations。使用 Sunburst、自动比例、1k；测试会实际生成一张图片并按平台规则计费，请等待完成。</p>}
       <label><span>{editing ? '轮换密钥（可选）' : 'API 密钥'}</span><input name="apiKey" type="password" autoComplete="new-password" placeholder={editing ? '留空则保持现有密钥' : '仅用于本次保存'} aria-invalid={Boolean(fields.apiKey)} aria-describedby="key-help" /><small id="key-help">{fields.apiKey || (editing ? '现有密钥不会回填；输入新值即完成轮换。' : '保存后页面不会显示或回填密钥。')}</small></label>
       {message && <Alert kind="error">{message}</Alert>}
       <div className="dialog-actions"><button className="text-button" type="button" onClick={onClose}>取消</button><button className="primary-button compact" type="submit" disabled={busy}>{busy && <RefreshCw className="spin" size={17} />}{busy ? '正在测试并保存' : '测试并保存'}</button></div>

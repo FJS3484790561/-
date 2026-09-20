@@ -108,3 +108,22 @@ test('passes safe protocol, timing and upstream diagnostics to the admin console
   assert.equal(result.upstreamMessage, 'image is too small')
   assert.equal(JSON.stringify({ result, logs }).includes('never-log-upstream-secret'), false)
 })
+
+test('background test returns immediately, isolates access and saves only after image test passes', async () => {
+  let finish
+  const data = await fixture({ testProvider: () => new Promise(resolve => { finish = resolve }) })
+  const input = { sessionToken: data.adminToken, name: 'async-provider', endpoint: 'https://provider.example/v1', model: 'test', apiKey: 'never-return-this' }
+  const started = data.service.startTest(input)
+  assert.equal(started.status, 'running')
+  assert.equal(data.service.list({ sessionToken: data.adminToken }).providers.length, 0)
+  assert.equal(data.service.startTest(input).code, 'PROVIDER_TEST_BUSY')
+  assert.equal(data.service.getTest({ sessionToken: data.userToken, testId: started.testId }).code, 'FORBIDDEN')
+  assert.equal(data.service.getTest({ testId: started.testId }).code, 'UNAUTHORIZED')
+  finish({ ok: true, httpStatus: 200 })
+  await new Promise(resolve => setImmediate(resolve))
+  const state = data.service.getTest({ sessionToken: data.adminToken, testId: started.testId })
+  assert.equal(state.status, 'completed')
+  assert.equal(state.result.ok, true)
+  assert.equal(JSON.stringify(state).includes('never-return-this'), false)
+  assert.equal(data.service.list({ sessionToken: data.adminToken }).providers.length, 1)
+})

@@ -231,7 +231,11 @@ export class AppApi {
     const providerMatch = pathname.match(/^\/api\/admin\/providers\/([^/]+)$/u)
     if (method === 'GET' && providerMatch) return safeResult(this.adminProviderService.get({ sessionToken, providerId: decodeURIComponent(providerMatch[1]) }))
     if (method === 'PATCH' && providerMatch) return withJsonBody(async (body) => safeResult(await this.adminProviderService.update({ ...body, sessionToken, providerId: decodeURIComponent(providerMatch[1]) })))
-    if (method === 'POST' && pathname === '/api/admin/providers/test') return withJsonBody(async (body) => safeResult(await this.adminProviderService.testAndSave({ ...body, sessionToken }), body.providerId ? 200 : 201))
+    if (method === 'POST' && pathname === '/api/admin/providers/test') return withJsonBody(async (body) => body.asyncTest === true
+      ? safeResult(this.adminProviderService.startTest({ ...body, sessionToken }), 202)
+      : safeResult(await this.adminProviderService.testAndSave({ ...body, sessionToken }), body.providerId ? 200 : 201))
+    const providerTestMatch = pathname.match(/^\/api\/admin\/provider-tests\/([^/]+)$/u)
+    if (method === 'GET' && providerTestMatch) return safeResult(this.adminProviderService.getTest({ sessionToken, testId: decodeURIComponent(providerTestMatch[1]) }))
 
     return json({ ok: false, code: 'NOT_FOUND' }, 404)
   }

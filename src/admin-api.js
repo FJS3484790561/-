@@ -6,6 +6,8 @@ export class ApiError extends Error {
     this.name = 'ApiError'
     this.status = status
     this.code = payload.code || 'UNKNOWN_ERROR'
+    this.serverMessage = payload.message
+    this.upstreamMessage = payload.upstreamMessage
     this.fields = payload.fields || {}
     this.traceId = payload.traceId
     this.stage = payload.stage
@@ -23,7 +25,7 @@ async function request(path, options = {}) {
   try {
     payload = await response.json()
   } catch {
-    payload = { ok: false, code: 'INVALID_RESPONSE' }
+    payload = { ok: false, code: 'INVALID_RESPONSE', message: '网关返回了非 JSON 响应（HTTP ' + response.status + '），尚未取得 Provider 测试结果。' }
   }
   if (!response.ok) throw new ApiError(response.status, payload)
   return payload
@@ -44,7 +46,20 @@ export const adminApi = {
   listGenerationDebug: () => request('/api/admin/generation-debug'),
   createProvider: (values) => request('/api/admin/providers', { method: 'POST', body: JSON.stringify(values) }),
   updateProvider: (providerId, values) => request(`/api/admin/providers/${encodeURIComponent(providerId)}`, { method: 'PATCH', body: JSON.stringify(values) }),
-  testAndSaveProvider: (values) => request('/api/admin/providers/test', { method: 'POST', body: JSON.stringify(values) }),
+  testAndSaveProvider: async (values) => {
+    const started = await request('/api/admin/providers/test', { method: 'POST', body: JSON.stringify({ ...values, asyncTest: true }) })
+    if (!started.testId) return started
+    const deadline = Date.now() + 5 * 60_000
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 1500))
+      const state = await request('/api/admin/provider-tests/' + encodeURIComponent(started.testId))
+      if (state.status === 'completed') {
+        if (!state.result?.ok) throw new ApiError(state.result?.httpStatus || 502, state.result)
+        return state.result
+      }
+    }
+    throw new ApiError(504, { code: 'PROVIDER_TIMEOUT', message: '测试仍未完成，请先刷新 Provider 列表确认是否已保存，再决定重试。' })
+  },
   setProviderEnabled: (providerId, enabled) => request(`/api/admin/providers/${encodeURIComponent(providerId)}/enabled`, { method: 'POST', body: JSON.stringify({ enabled }) }),
   listAudit: (providerId) => request(`/api/admin/providers/${encodeURIComponent(providerId)}/audit`),
   listRedemptionCodes: () => request('/api/admin/redemption-codes'),
