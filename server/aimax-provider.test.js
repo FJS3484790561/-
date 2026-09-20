@@ -4,6 +4,37 @@ import { runAimax, isAimax } from './aimax-provider.js'
 import { testConfiguredProvider, configuredGenerationProvider } from './app-runtime.js'
 const options = { endpoint: 'https://api.aimaxa.cn/v1/images/generations', model: 'gpt-image-2.5', apiKey: 'test-secret', traceId: 'safe-trace', imageUrl: 'https://storage.example/original.png?signature=private', prompt: '保持原图结构', pollMs: 1, timeoutMs: 1000 }
 const json = (data) => Response.json({ code: 200, data })
+for (const endpoint of ['https://api.aimaxa.cn', 'https://api.aimaxa.cn/', 'https://api.aimaxa.cn/v1', 'https://api.aimaxa.cn/v1/', options.endpoint, options.endpoint + '/']) {
+  test('AImAX base endpoint selects async protocol and submits to generations: ' + endpoint, async () => {
+    assert.equal(isAimax(endpoint, options.model), true)
+    const calls = []
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64')
+    const result = await testConfiguredProvider({ ...options, endpoint,
+      objectStorage: { put: async () => {}, signedReadUrl: async () => options.imageUrl },
+      fetchImpl: async (url, init) => {
+        calls.push({ url, init })
+        if (init?.method === 'POST') {
+          assert.equal(url, options.endpoint)
+          assert.equal(init.headers['content-type'], 'application/json')
+          assert.deepEqual(JSON.parse(init.body).images, [options.imageUrl])
+          return json({ task_id: 'task_base', status: 'submitted' })
+        }
+        if (String(url).includes('/v1/tasks/')) return json({ task_id: 'task_base', status: 'succeeded', works: [{ asset_url: 'https://images.example/result.png' }] })
+        return new Response(png)
+      },
+    })
+    assert.equal(result.ok, true, JSON.stringify(result))
+    assert.equal(result.protocol, 'aimax-async-reference-image')
+    assert.equal(calls.filter(c => c.init?.method === 'POST').length, 1)
+    assert.equal(calls[1].url, 'https://api.aimaxa.cn/v1/tasks/task_base')
+  })
+}
+test('AImAX endpoint normalization does not rewrite other hosts, paths or credential URLs', () => {
+  for (const endpoint of ['https://other.example/v1', 'https://api.aimaxa.cn.evil.example/v1', 'http://api.aimaxa.cn/v1', 'https://api.aimaxa.cn:8443/v1', 'https://user:pass@api.aimaxa.cn/v1', 'https://api.aimaxa.cn/v1?key=private', 'https://api.aimaxa.cn/v1#fragment', 'https://api.aimaxa.cn/v1/chat/completions']) {
+    assert.equal(isAimax(endpoint, options.model), false)
+  }
+  assert.equal(isAimax(options.endpoint, 'other-model'), false)
+})
 test('AImAX submits Sunburst JSON once, polls with auth, and reads works asset URL', async () => {
   const calls = []
   const result = await runAimax({ ...options, fetchImpl: async (url, init) => {
@@ -45,7 +76,8 @@ test('AImAX save gate uses signed fixture and validates final image, not just ta
   assert.equal(result.protocol, 'aimax-async-reference-image')
 })
 test('formal generation passes SOP and original signed URL through async adapter', async () => {
-  const provider = configuredGenerationProvider({ adminProviderService: { getEnabledConfig: () => ({ ok: true, provider: options }) }, conversationProvider: { analyze: async () => ({ prompt: options.prompt, providerMs: 1 }) }, logger: {}, fetchImpl: async (_url, init) => {
+  const provider = configuredGenerationProvider({ adminProviderService: { getEnabledConfig: () => ({ ok: true, provider: { ...options, endpoint: 'https://api.aimaxa.cn/v1' } }) }, conversationProvider: { analyze: async () => ({ prompt: options.prompt, providerMs: 1 }) }, logger: {}, fetchImpl: async (_url, init) => {
+    assert.equal(_url, options.endpoint)
     const body = JSON.parse(init.body)
     assert.deepEqual(body.images, [options.imageUrl])
     assert.equal(body.prompt, options.prompt)

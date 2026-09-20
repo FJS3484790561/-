@@ -1,10 +1,17 @@
 import { setTimeout as delay } from 'node:timers/promises'
 
 export function isAimax(endpoint, model) {
+  return model === 'gpt-image-2.5' && aimaxEndpoint(endpoint) !== null
+}
+
+export function aimaxEndpoint(endpoint) {
   try {
     const url = new URL(endpoint)
-    return url.protocol === 'https:' && url.hostname === 'api.aimaxa.cn' && /^\/v1\/images\/generations\/?$/u.test(url.pathname) && model === 'gpt-image-2.5'
-  } catch { return false }
+    if (url.protocol !== 'https:' || url.hostname !== 'api.aimaxa.cn' || url.port || url.username || url.password || url.search || url.hash) return null
+    if (!['', '/v1', '/v1/images/generations'].includes(url.pathname.replace(/\/$/u, ''))) return null
+    url.pathname = '/v1/images/generations'
+    return url.toString()
+  } catch { return null }
 }
 
 function failure(code, stage, message, httpStatus) {
@@ -12,6 +19,8 @@ function failure(code, stage, message, httpStatus) {
 }
 
 export async function runAimax({ endpoint, model, apiKey, traceId, imageUrl, prompt, fetchImpl = globalThis.fetch, timeoutMs = 150_000, pollMs = 2000 }) {
+  const submitEndpoint = aimaxEndpoint(endpoint)
+  if (!submitEndpoint) throw failure('INVALID_PROVIDER_ENDPOINT', 'configuration', 'AImAX 接口地址无效，请填写 https://api.aimaxa.cn/v1/images/generations。')
   let reference
   try { reference = new URL(imageUrl) } catch { /* validated below */ }
   if (!reference || reference.protocol !== 'https:' || reference.username || reference.password) {
@@ -28,10 +37,10 @@ export async function runAimax({ endpoint, model, apiKey, traceId, imageUrl, pro
     return payload.data
   }
   try {
-    let task = await request(endpoint, { method: 'POST', headers: { ...headers, 'content-type': 'application/json' }, body: JSON.stringify({ model, version: 'sunburst', prompt, size: 'auto', resolution: '1k', images: [reference.toString()] }) }, 'submit')
+    let task = await request(submitEndpoint, { method: 'POST', headers: { ...headers, 'content-type': 'application/json' }, body: JSON.stringify({ model, version: 'sunburst', prompt, size: 'auto', resolution: '1k', images: [reference.toString()] }) }, 'submit')
     if (typeof task.task_id !== 'string' || !/^[A-Za-z0-9_-]{1,200}$/u.test(task.task_id)) throw failure('INVALID_PROVIDER_RESPONSE', 'submit', 'AImAX 未返回有效的任务编号。')
     const taskId = task.task_id
-    const taskUrl = new URL(`/v1/tasks/${encodeURIComponent(taskId)}`, endpoint).toString()
+    const taskUrl = new URL(`/v1/tasks/${encodeURIComponent(taskId)}`, submitEndpoint).toString()
     while (true) {
       if (task.task_id && task.task_id !== taskId) throw failure('INVALID_PROVIDER_RESPONSE', 'poll', 'AImAX 返回了不匹配的任务编号。')
       if (task.status === 'succeeded') {
