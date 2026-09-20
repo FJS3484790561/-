@@ -26,7 +26,7 @@ const copy = {
   MAIL_UNAVAILABLE: '邮件发送失败，请检查发信配置后重试。',
   STYLE_ALREADY_EXISTS: '这个风格已经存在，请换一个名称。',
 }
-const messageFor = (error, fallback = '操作未完成，请稍后重试。') => error instanceof TypeError ? '无法连接本地服务，请确认 API 已启动。' : copy[error?.code] || fallback
+const messageFor = (error, fallback = '操作未完成，请稍后重试。') => error instanceof TypeError ? '无法连接本地服务，请确认 API 已启动。' : error?.upstreamMessage || error?.message || copy[error?.code] || fallback
 const formatTime = (value) => new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
 const formatBytes = (bytes) => bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`
 function readImagePayload(file) {
@@ -155,10 +155,8 @@ function ProviderForm({ provider, onClose, onSaved }) {
       console.info('[Provider Test] started', { provider: payload.name, model: payload.model })
       const result = await adminApi.testAndSaveProvider(editing ? { ...payload, providerId: provider.id } : payload)
       console.info('[Provider Test] completed', { traceId: result.traceId, stage: result.stage, httpStatus: result.httpStatus, ok: true })
-      form.elements.apiKey.value = ''
       onSaved(result.provider, editing ? 'Provider 配置已更新。' : 'Provider 已创建，默认处于停用状态。')
     } catch (error) {
-      form.elements.apiKey.value = ''
       setFields(error instanceof ApiError ? error.fields : {})
       console.error('[Provider Test] failed', { code: error?.code, traceId: error?.traceId, stage: error?.stage, httpStatus: error?.httpStatus })
       setMessage(`${messageFor(error)}${error?.traceId ? `（追踪编号：${error.traceId}）` : ''}`)

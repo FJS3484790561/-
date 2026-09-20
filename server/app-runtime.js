@@ -11,7 +11,7 @@ import { MemoryPaymentStore, PaymentService } from './payment-service.js'
 import { MemoryWorksStore, WorksService } from './works-service.js'
 import { MemoryStyleStore, StyleService } from './style-service.js'
 import { AdminStyleReferenceService, MemoryAdminStyleReferenceStore } from './admin-style-reference-service.js'
-import { INTERIOR_SOP_SYSTEM_PROMPT, extractSopPrompt, sopUserMessage } from './sop-prompt.js'
+import { INTERIOR_SOP_SYSTEM_PROMPT, enrichSopPrompt, extractSopPrompt, sopUserMessage } from './sop-prompt.js'
 
 function localPaymentProvider() {
   return {
@@ -206,7 +206,7 @@ export function configuredConversationProvider({ adminProviderService, fetchImpl
         if (!response.ok) throw diagnosticError('Conversation provider request failed', { code: 'CONVERSATION_HTTP_ERROR', stage: 'response', httpStatus: response.status })
         let payload
         try { payload = await response.json() } catch { throw diagnosticError('Conversation provider response was not JSON', { code: 'INVALID_CONVERSATION_RESPONSE', stage: 'parse', httpStatus: response.status }) }
-        const prompt = extractSopPrompt(conversationContent(payload))
+        const prompt = enrichSopPrompt(extractSopPrompt(conversationContent(payload)), params)
         return { prompt, providerMs: Date.now() - startedAt }
       } catch (reason) {
         const timeout = reason?.name === 'TimeoutError' || reason?.name === 'AbortError' || reason?.code === 'ABORT_ERR'

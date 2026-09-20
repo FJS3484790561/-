@@ -50,6 +50,16 @@ function contentText(content) {
   return content.map((part) => typeof part === 'string' ? part : part?.text ?? '').join('\n');
 }
 
+export function enrichSopPrompt(prompt, params = {}) {
+  const base = String(prompt ?? '').trim();
+  if (base.length >= 1000) return base;
+  const room = params.room || '原图所示房间';
+  const theme = params.theme || '克制、协调的住宅风格';
+  const user = params.userPrompt?.trim() ? ',并落实用户补充要求：' + params.userPrompt.trim() : '';
+  const supplement = '基于上传的原始' + room + '照片进行真实室内改造，严格保持原始相机位置、镜头高度、拍摄方向、视角、透视、构图、画面裁切、房间边界、墙体关系、门窗位置与尺寸、梁柱、层高、地面高度、固定电器、固定管线和所有不可移动设施，不改变原始空间比例，不移动或增减任何原图无法确认的门窗、结构或开口；整体采用' + theme + '，先根据原图真实比例和主要动线组织布局与收纳，再处理墙面、地面、顶面和软装层次' + user + '。新增或替换的家具必须符合真实住宅尺寸、人体工学和制造逻辑，具有合理厚度、支撑、连接、落地接触和自然遮挡关系，柜体要有可信的板材厚度、拼接、门缝、收口和开启关系，沙发、茶几、边柜、餐桌、床、灯具等不能漂浮、穿模、悬空或比例失真；保留原图已有不可移动物品，未确认的区域保持原样，避免为了风格堆满装饰。材料使用真实木纹、天然石材、亚麻、棉、羊毛、藤编、皮革、磨砂玻璃和哑光涂层，颜色控制在协调的低饱和范围，保留轻微生活痕迹和适度不完美，不做样板间式过度整洁。保留原图窗户进光方向、自然光色温、亮暗分布和阴影方向，只用少量合理的2700–3000K灯具补充局部层次，不制造相互矛盾的多重光源；所有阴影、反射、材质纹理和遮挡必须符合真实摄影。最终画面应像真实室内建筑摄影，正常垂直线和自然透视，真实镜头畸变、曝光和景深，不要出现明显AI感、3D渲染感、游戏场景感、塑料材质、过度磨皮、重复家具、变形家具、错误透视、改变房间结构、额外门窗、文字、Logo、人物、宠物、水印、边框或拼贴。';
+  return base + supplement;
+}
+
 export function extractSopPrompt(content) {
   const text = contentText(content).replace(/\r\n/gu, '\n').trim();
   const match = text.match(/【最终图生图提示词】\s*([\s\S]+)/u);
