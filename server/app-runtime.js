@@ -168,7 +168,7 @@ function conversationRequest({ model, image, params, apiKey, traceId }) {
     body: JSON.stringify({
       model,
       temperature: 0.2,
-      max_tokens: 1200,
+      max_tokens: 2400,
       messages: [
         { role: 'system', content: INTERIOR_SOP_SYSTEM_PROMPT },
         { role: 'user', content: [{ type: 'text', text: sopUserMessage({ params, isRevision: Boolean(params?.editPrompt) }) }, { type: 'image_url', image_url: { url: imageDataUrl, detail: 'high' } }] },

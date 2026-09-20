@@ -99,8 +99,8 @@ try {
       await overview.getByRole('button', { name: '刷新总体数据' }).waitFor()
       await page.waitForFunction(() => document.querySelector('.overview-section[aria-busy="false"]') !== null)
     }
+    await page.getByRole('button', { name: 'Provider 管理' }).click()
     if (viewport.name === 'desktop') await page.getByText('尚未配置 Provider').waitFor()
-
     await page.getByRole('button', { name: '新建 Provider' }).first().click()
     if (viewport.name === 'desktop') {
       await page.getByRole('button', { name: '测试并保存' }).click()
@@ -158,11 +158,13 @@ try {
     await page.keyboard.press('Tab')
     const focusOutline = await page.evaluate(() => getComputedStyle(document.activeElement).outlineStyle)
     await page.getByRole('button', { name: '关闭审计记录' }).click()
+    await page.getByRole('button', { name: '兑换码' }).click()
     await page.getByLabel('每人增加点数').fill('8')
     await page.getByLabel('最多兑换人数').fill('3')
     await page.getByRole('button', { name: '生成兑换码' }).click()
     await page.locator('.new-code code').filter({ hasText: /ROOM-[2-9A-HJ-NP-Z]{4}-[2-9A-HJ-NP-Z]{4}-[2-9A-HJ-NP-Z]{4}/ }).waitFor()
     await page.getByText('8').last().waitFor()
+    await page.getByRole('button', { name: '数据总览' }).click()
     const expectedCount = ['desktop', 'mobile', 'minimum-mobile'].indexOf(viewport.name) + 1
     await page.waitForFunction((count) => [...document.querySelectorAll('.overview-stat')].some((card) => card.querySelector('small')?.textContent === '兑换码' && card.querySelector('strong')?.textContent === String(count)), expectedCount)
     await page.screenshot({ path: join(screenshotDirectory, `${viewport.name}.png`), fullPage: true })

@@ -60,6 +60,8 @@ test('conversation provider sends the original room image with the exact SOP and
   const body = JSON.parse(request.body)
   assert.equal(result.prompt, sopPrompt.slice(sopPrompt.indexOf('】') + 1))
   assert.equal(body.messages[0].content, INTERIOR_SOP_SYSTEM_PROMPT)
+  assert.equal(body.max_tokens, 2400)
+  assert.match(body.messages[0].content, /900–1800/u)
   assert.equal(body.messages[1].content[1].image_url.url, `data:image/jpeg;base64,${Buffer.from('room-photo').toString('base64')}`)
   assert.equal(JSON.stringify(request).includes('chat-secret'), true)
 })

@@ -234,7 +234,7 @@ function StyleReferenceLibrary({ initialReferences }) {
     try { const result = await adminApi.updateStyleReference(editing.id, { name: editing.name.trim(), theme: editing.theme.trim(), description: editing.description.trim(), ...(editing.image ? { image: await readImagePayload(editing.image) } : {}) }); setItems((current) => current.map((entry) => entry.id === editing.id ? result.styleReference : entry)); setEditing(null) } catch (reason) { setError(messageFor(reason, '风格保存失败，请重试。')) } finally { setBusy(false) }
   }
   return <section className="provider-section style-reference-section">
-    <header className="section-heading"><div><h2><ImagePlus size={19} />设计风格参考图</h2><p>仅供用户浏览，不会进入对话分析或图像生成请求。</p></div></header>
+    <header className="section-heading"><div><h2><ImagePlus size={19} />风格管理</h2><p>每个风格占一行；用上下箭头调整顺序，用户端会按同样顺序展示。参考图仅供用户浏览，不会进入对话分析或图像生成请求。</p></div></header>
     <form className="style-reference-form" onSubmit={submit}>
       <label><span>名称</span><input value={values.name} onChange={(event) => setValues({ ...values, name: event.target.value })} placeholder="例如：暖木客厅" maxLength="80" /></label>
       <label><span>对应风格</span><input value={values.theme} onChange={(event) => setValues({ ...values, theme: event.target.value })} placeholder="例如：现代简约" maxLength="40" /></label>
@@ -243,7 +243,7 @@ function StyleReferenceLibrary({ initialReferences }) {
       {error && <Alert kind="error">{error}</Alert>}
       <button className="primary-button compact" type="submit" disabled={busy}>{busy ? <RefreshCw className="spin" size={17} /> : <Plus size={17} />}{busy ? '上传中' : '上传参考图'}</button>
     </form>
-    {!items.length ? <div className="empty-mini">还没有上传风格参考图</div> : <div className="style-reference-list">{items.map((item, index) => <article className={item.enabled ? 'style-reference-row' : 'style-reference-row is-disabled'} key={item.id}><img src={item.image.url} alt="" /><div className="style-reference-copy"><strong>{item.name}</strong><small>{item.theme}{item.description ? ` · ${item.description}` : ''}</small></div><div className="style-reference-actions"><button className="icon-button" type="button" onClick={() => move(item, -1)} disabled={index === 0} aria-label="上移"><ArrowUp size={16} /></button><button className="icon-button" type="button" onClick={() => move(item, 1)} disabled={index === items.length - 1} aria-label="下移"><ArrowDown size={16} /></button><button className="text-button" type="button" onClick={() => setEditing({ ...item, image: null })}><Pencil size={15} />编辑</button><button className="text-button" type="button" onClick={() => toggle(item)}>{item.enabled ? '停用' : '启用'}</button><button className="text-button danger-text" type="button" onClick={() => remove(item)}><Trash2 size={15} />删除</button></div></article>)}</div>}
+    {!items.length ? <div className="empty-mini">还没有上传风格参考图</div> : <div className="style-reference-list">{items.map((item, index) => <article className={item.enabled ? 'style-reference-row' : 'style-reference-row is-disabled'} key={item.id}><span className="style-reference-position" aria-label={`第 ${index + 1} 行`}>{index + 1}</span><img src={item.image.url} alt="" /><div className="style-reference-copy"><strong>{item.name}</strong><small>{item.theme}{item.description ? ` · ${item.description}` : ''}</small></div><div className="style-reference-actions"><button className="icon-button" type="button" onClick={() => move(item, -1)} disabled={index === 0} aria-label="上移"><ArrowUp size={16} /></button><button className="icon-button" type="button" onClick={() => move(item, 1)} disabled={index === items.length - 1} aria-label="下移"><ArrowDown size={16} /></button><button className="text-button" type="button" onClick={() => setEditing({ ...item, image: null })}><Pencil size={15} />编辑</button><button className="text-button" type="button" onClick={() => toggle(item)}>{item.enabled ? '停用' : '启用'}</button><button className="text-button danger-text" type="button" onClick={() => remove(item)}><Trash2 size={15} />删除</button></div></article>)}</div>}
     {editing && <div className="backdrop" onMouseDown={(event) => event.target === event.currentTarget && !busy && setEditing(null)}><section className="dialog" role="dialog" aria-modal="true"><header className="dialog-header"><div><span className="kicker">风格管理</span><h2>编辑风格</h2></div><button className="icon-button" type="button" onClick={() => setEditing(null)} aria-label="关闭"><X size={18} /></button></header><form className="auth-form" onSubmit={saveEdit}><label><span>名称</span><input value={editing.name} onChange={(event) => setEditing({ ...editing, name: event.target.value })} /></label><label><span>对应风格</span><input value={editing.theme} onChange={(event) => setEditing({ ...editing, theme: event.target.value })} /></label><label><span>说明</span><input value={editing.description} onChange={(event) => setEditing({ ...editing, description: event.target.value })} /></label><label className="file-input"><span>替换参考图（可选）</span><input type="file" accept="image/jpeg,image/png" onChange={(event) => setEditing({ ...editing, image: event.target.files?.[0] ?? null })} /></label><div className="dialog-actions"><button className="secondary-button" type="button" onClick={() => setEditing(null)}>取消</button><button className="primary-button" type="submit" disabled={busy}>{busy ? '保存中' : '保存修改'}</button></div></form></section></div>}
   </section>
 }
@@ -321,6 +321,7 @@ function FeedbackList({ initialFeedback }) {
 function Console({ user, initialProviders, initialRedemptionCodes, initialFeedback, initialStyleReferences, initialPromptDebugs, onLogout }) {
   const [providers, setProviders] = useState(initialProviders)
   const [redemptionCodes, setRedemptionCodes] = useState(initialRedemptionCodes)
+  const [activeSection, setActiveSection] = useState('overview')
   const [dialog, setDialog] = useState(null)
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
@@ -341,13 +342,28 @@ function Console({ user, initialProviders, initialRedemptionCodes, initialFeedba
       setNotice(`${provider.name} 已${result.provider.enabled ? '启用' : '停用'}。`)
     } catch (errorValue) { setError(messageFor(errorValue)) } finally { setBusyId('') }
   }
+  const sections = [
+    ['overview', '数据总览', BarChart3],
+    ['providers', 'Provider 管理', ServerCog],
+    ['styles', '风格管理', ImagePlus],
+    ['codes', '兑换码', Ticket],
+    ['feedback', '用户反馈', MessageSquare],
+    ['prompts', '提示词调试', MessageSquare],
+  ]
+  const activeLabel = sections.find(([id]) => id === activeSection)?.[1] ?? '数据总览'
   return <main className="admin-shell">
     <header className="topbar"><Brand /><div className="account"><span><ShieldCheck size={15} />{user.email}</span><button className="icon-button" onClick={onLogout} aria-label="退出管理员账号" title="退出"><LogOut size={18} /></button></div></header>
-    <section className="console-heading"><div><span className="kicker"><Activity size={15} />系统配置</span><h1>运营管理</h1><p>维护图片 Provider、兑换码和用户额度发放。</p></div><button className="primary-button add-button" onClick={() => setDialog({ type: 'form' })}><Plus size={18} />新建 Provider</button></section>
-    <section className="summary" aria-label="Provider 概览"><div><small>全部配置</small><strong>{providers.length}</strong></div><div><small>已启用</small><strong>{providers.filter((item) => item.enabled).length}</strong></div><div><small>密钥已配置</small><strong>{providers.filter((item) => item.apiKeyConfigured).length}</strong></div></section>
-    <div className="status-region" aria-live="polite">{notice && <Alert kind="success" action={<button onClick={() => setNotice('')} aria-label="关闭成功消息"><X size={15} /></button>}>{notice}</Alert>}{error && <Alert kind="error" action={<button onClick={refresh}>重试</button>}>{error}</Alert>}</div>
-    <Overview providers={providers} redemptionCodes={redemptionCodes} />
-    <section className="provider-section">
+    <section className="console-heading"><div><span className="kicker"><Activity size={15} />系统配置</span><h1>运营管理</h1><p>{activeLabel} · 分区管理，修改后即时同步到用户端。</p></div>{activeSection === 'providers' && <button className="primary-button add-button" onClick={() => setDialog({ type: 'form' })}><Plus size={18} />新建 Provider</button>}</section>
+    <div className="admin-layout">
+      <nav className="admin-sidebar" aria-label="管理台导航">
+        <span className="sidebar-label">管理模块</span>
+        {sections.map(([id, label, Icon]) => <button key={id} type="button" className={activeSection === id ? 'active' : ''} onClick={() => setActiveSection(id)} aria-current={activeSection === id ? 'page' : undefined}><Icon size={17} /><span>{label}</span></button>)}
+      </nav>
+      <div className="admin-content">
+        <section className="summary" aria-label="Provider 概览"><div><small>全部配置</small><strong>{providers.length}</strong></div><div><small>已启用</small><strong>{providers.filter((item) => item.enabled).length}</strong></div><div><small>密钥已配置</small><strong>{providers.filter((item) => item.apiKeyConfigured).length}</strong></div></section>
+        <div className="status-region" aria-live="polite">{notice && <Alert kind="success" action={<button onClick={() => setNotice('')} aria-label="关闭成功消息"><X size={15} /></button>}>{notice}</Alert>}{error && <Alert kind="error" action={<button onClick={refresh}>重试</button>}>{error}</Alert>}</div>
+        {activeSection === 'overview' && <Overview providers={providers} redemptionCodes={redemptionCodes} />}
+        {activeSection === 'providers' && <section className="provider-section">
       <header className="section-heading"><div><h2>连接配置</h2><p>密钥始终以脱敏状态呈现。</p></div><button className="icon-button" onClick={refresh} aria-label="刷新 Provider 列表" title="刷新"><RefreshCw size={18} /></button></header>
       {!providers.length ? <div className="empty-state"><span><ServerCog size={28} /></span><h3>尚未配置 Provider</h3><p>创建第一条连接配置。新配置默认停用。</p><button className="secondary-button" onClick={() => setDialog({ type: 'form' })}><Plus size={17} />新建 Provider</button></div> :
       <div className="provider-list">{providers.map((provider) => <article className="provider-row" key={provider.id}>
@@ -355,11 +371,13 @@ function Console({ user, initialProviders, initialRedemptionCodes, initialFeedba
         <dl><div><dt>模型</dt><dd>{provider.model}</dd></div><div><dt>密钥</dt><dd>{provider.apiKeyConfigured ? provider.apiKeyMasked : '未配置'}</dd></div><div><dt>更新时间</dt><dd>{formatTime(provider.updatedAt)}</dd></div></dl>
         <div className="actions"><button className="text-button" onClick={() => setDialog({ type: 'audit', provider })}><Activity size={16} />审计</button><button className="text-button" onClick={() => setDialog({ type: 'form', provider })}><Pencil size={16} />编辑</button><button className={provider.enabled ? 'toggle enabled' : 'toggle'} aria-pressed={provider.enabled} disabled={busyId === provider.id} onClick={() => toggle(provider)}><span />{busyId === provider.id ? '处理中' : provider.enabled ? '停用' : '启用'}</button></div>
       </article>)}</div>}
-    </section>
-    <RedemptionCodes codes={redemptionCodes} onCreated={(code) => setRedemptionCodes((current) => [code, ...current])} onDeleted={(deleted) => setRedemptionCodes((current) => deleted.deletedAt ? current.map((item) => item.id === deleted.id ? deleted : item) : current.filter((item) => item.id !== deleted.id))} />
-    <FeedbackList initialFeedback={initialFeedback} />
-    <StyleReferenceLibrary initialReferences={initialStyleReferences} />
-    <PromptDebug initialItems={initialPromptDebugs} />
+    </section>}
+        {activeSection === 'codes' && <RedemptionCodes codes={redemptionCodes} onCreated={(code) => setRedemptionCodes((current) => [code, ...current])} onDeleted={(deleted) => setRedemptionCodes((current) => deleted.deletedAt ? current.map((item) => item.id === deleted.id ? deleted : item) : current.filter((item) => item.id !== deleted.id))} />}
+        {activeSection === 'feedback' && <FeedbackList initialFeedback={initialFeedback} />}
+        {activeSection === 'styles' && <StyleReferenceLibrary initialReferences={initialStyleReferences} />}
+        {activeSection === 'prompts' && <PromptDebug initialItems={initialPromptDebugs} />}
+      </div>
+    </div>
     <footer><span><ShieldCheck size={15} />权限、密钥与兑换码由服务器端保护</span><span>敏感值不会回填到页面</span></footer>
     {dialog?.type === 'form' && <ProviderForm provider={dialog.provider} onClose={() => setDialog(null)} onSaved={saved} />}
     {dialog?.type === 'audit' && <Audit provider={dialog.provider} onClose={() => setDialog(null)} />}
