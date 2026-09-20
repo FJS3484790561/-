@@ -4,6 +4,16 @@ import { runAimax, isAimax } from './aimax-provider.js'
 import { testConfiguredProvider, configuredGenerationProvider } from './app-runtime.js'
 const options = { endpoint: 'https://api.aimaxa.cn/v1/images/generations', model: 'gpt-image-2.5', apiKey: 'test-secret', traceId: 'safe-trace', imageUrl: 'https://storage.example/original.png?signature=private', prompt: '保持原图结构', pollMs: 1, timeoutMs: 1000 }
 const json = (data) => Response.json({ code: 200, data })
+test('AImAX rejects malformed keys before submitting and does not expose them', async () => {
+  for (const apiKey of ['中文密钥', 'Bearer test-secret', 'test\nsecret', '']) {
+    await assert.rejects(runAimax({ ...options, apiKey, fetchImpl: () => assert.fail('must not send') }), e => e.code === 'INVALID_API_KEY_FORMAT' && e.stage === 'configuration')
+  }
+})
+test('AImAX classifies connection errors and blocked redirects without exposing raw error text', async () => {
+  for (const [cause, expected] of [[{ code: 'ECONNRESET', message: 'private-key' }, '连接被重置'], [{ message: 'unexpected redirect' }, '重定向'], [{ message: 'private-key' }, '尚不能确定']]) {
+    await assert.rejects(runAimax({ ...options, fetchImpl: async () => { throw Object.assign(new TypeError('fetch failed'), { cause }) } }), e => e.stage === 'submit' && e.message.includes(expected) && !e.message.includes('private-key'))
+  }
+})
 for (const endpoint of ['https://api.aimaxa.cn', 'https://api.aimaxa.cn/', 'https://api.aimaxa.cn/v1', 'https://api.aimaxa.cn/v1/', options.endpoint, options.endpoint + '/']) {
   test('AImAX base endpoint selects async protocol and submits to generations: ' + endpoint, async () => {
     assert.equal(isAimax(endpoint, options.model), true)

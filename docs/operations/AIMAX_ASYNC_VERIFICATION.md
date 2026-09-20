@@ -14,6 +14,15 @@ Polling submits once, handles HTTP-200 failed status as failure, requires valid 
 
 ## 2026-09-20 base endpoint regression fix
 
+### Follow-up request diagnostics
+
+FACT: Trace provider_test_7ecb3861-7f9f-4742-ae71-b13b95a4a0a6 used the async protocol but failed without an HTTP status in 125ms. The historical catch discarded its cause, so the original cause cannot be reconstructed.
+FACT: Server DNS resolved api.aimaxa.cn; curl and Node fetch reached HTTPS generations and returned HTTP 401 without credentials. The deployed adapter returned HTTP 401 with a deliberately invalid diagnostic key. Read-only database inspection found no saved AImAX Provider. No paid task was submitted.
+IMPLEMENTATION_CHOICE: Validate nonempty printable ASCII key format before dispatch, trim surrounding whitespace, classify known DNS/socket/TLS causes and blocked redirects, and preserve submit/poll stage without exposing raw exceptions or secrets.
+- PASS local-code: 134/134 tests and ESLint.
+- PASS server: module deployed with backup /home/ubuntu/ai-interior-backups/aimax-diagnostics-20260920/aimax-provider.js; service active; real unauthenticated upstream request returned 401.
+- BLOCKED real-business: user message contains repeated form/error text instead of an API key; no saved AImAX credential is available. Authenticated generation remains unverified. Network reachability alone does not establish model availability.
+
 FACT: Trace provider_test_442100a2-487a-497e-870d-ab934a832b45 selected multipart-image-edit and received HTTP 404, Invalid URL (POST /v1). The AImAX detector previously required the complete generations path.
 DECISION: Continue the user's authorized Provider repair and deployment under the previously approved Lite recovery; preserve historical Comet state.
 IMPLEMENTATION_CHOICE: Recognize the exact HTTPS AImAX host with root, /v1, or /v1/images/generations (optional trailing slash); normalize submission to /v1/images/generations. Other hosts, models, paths, credentials, query strings and fragments are not rewritten.
